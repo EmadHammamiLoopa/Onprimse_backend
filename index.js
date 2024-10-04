@@ -219,6 +219,10 @@ io.sockets.on('connection', (socket) => {
 // Serve the Cordova application for the browser platform
 app.use(express.static(path.join(__dirname, 'platforms/browser/www')));
 
+app.get('/', (req, res) => {
+  res.status(200).send('Backend is running and ready to accept requests.');
+});
+
 // Handle all other routes and return the index file
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'platforms/browser/www', 'index.html'));
