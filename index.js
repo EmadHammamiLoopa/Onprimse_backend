@@ -15,14 +15,8 @@ const http = require('http'); // Fallback to HTTP if not using HTTPS
 const https = require('https');
 
 // SSL setup only for local development
-let httpsServer;
-if (process.env.NODE_ENV !== 'production') {
-  const privateKey = fs.readFileSync('path/to/your/local/key.pem', 'utf8');
-  const certificate = fs.readFileSync('path/to/your/local/cert.pem', 'utf8');
-  const credentials = { key: privateKey, cert: certificate };
-
-  httpsServer = https.createServer(credentials, app);
-}
+let server;
+const app = express();
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -55,7 +49,6 @@ const Post = require('./app/models/Post');
 const { deleteUser } = require('./app/controllers/UserController');
 
 require('dotenv').config();
-const app = express();
 app.use(cors());
 app.use(allowAccess);
 
@@ -77,6 +70,12 @@ const removeExpiredMedia = () => {
 
 // Redirect HTTP requests to HTTPS in local environment
 if (process.env.NODE_ENV !== 'production') {
+  const privateKey = fs.readFileSync('path/to/your/local/key.pem', 'utf8');
+  const certificate = fs.readFileSync('path/to/your/local/cert.pem', 'utf8');
+  const credentials = { key: privateKey, cert: certificate };
+
+  server = https.createServer(credentials, app);
+
   const httpApp = express();
   httpApp.use((req, res) => {
     res.redirect(`https://${req.hostname}${req.url}`);
@@ -85,13 +84,14 @@ if (process.env.NODE_ENV !== 'production') {
   httpServer.listen(80, () => {
     console.log('HTTP Server running on port 80 and redirecting to HTTPS...');
   });
+} else {
+  server = http.createServer(app);  // For production use HTTP
 }
 
 // Schedule job to remove expired media every hour
 schedule.scheduleJob('0 * * * *', removeExpiredMedia);
 
 // Set up Socket.io for HTTPS or HTTP
-let server = process.env.NODE_ENV !== 'production' ? httpsServer : app;
 const io = require('socket.io')(server, {
   cors: {
     origin: '*', // Adjust CORS settings as needed
@@ -108,15 +108,9 @@ const peerServer = ExpressPeerServer(server, {
 app.use('/peerjs', peerServer);
 
 const port = process.env.PORT || 3300;
-if (process.env.NODE_ENV !== 'production') {
-  httpsServer.listen(port, '0.0.0.0', () => {
-    console.log(`Secure server running on https://0.0.0.0:${port}`);
-  });
-} else {
-  app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
-  });
-}
+server.listen(port, '0.0.0.0', () => {
+  console.log(`Server running on port ${port}`);
+});
 
 // Express app configurations
 app.use(express.urlencoded({ extended: true }));
