@@ -223,6 +223,11 @@ app.get('/', (req, res) => {
   res.status(200).send('Backend is running and ready to accept requests.');
 });
 
+app.use((req, res) => {
+  console.error(`404 Error - Path: ${req.originalUrl}, Method: ${req.method}`);
+  res.status(404).send('Endpoint not found');
+});
+
 // Handle all other routes and return the index file
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'platforms/browser/www', 'index.html'));
