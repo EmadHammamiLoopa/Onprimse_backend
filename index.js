@@ -11,15 +11,20 @@ const passport = require('./routes/passport'); // Adjust the path to your passpo
 const schedule = require('node-schedule');
 const Comment = require('./app/models/Comment');
 const fs = require('fs');
+const http = require('http'); // Fallback to HTTP if not using HTTPS
 const https = require('https');
 
-// Read SSL certificate and key files
-// Read SSL certificate and key files
-const privateKey = fs.readFileSync('C:/Users/emadh/Downloads/packup/packup_27.07/31/32/isen-backend-master/key.pem', 'utf8');
-const certificate = fs.readFileSync('C:/Users/emadh/Downloads/packup/packup_27.07/31/32/isen-backend-master/cert.pem', 'utf8');
-const credentials = { key: privateKey, cert: certificate };
+// SSL setup only for local development
+let httpsServer;
+if (process.env.NODE_ENV !== 'production') {
+  const privateKey = fs.readFileSync('path/to/your/local/key.pem', 'utf8');
+  const certificate = fs.readFileSync('path/to/your/local/cert.pem', 'utf8');
+  const credentials = { key: privateKey, cert: certificate };
 
-// import routes
+  httpsServer = https.createServer(credentials, app);
+}
+
+// Import routes
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const productRoutes = require('./routes/product');
@@ -33,7 +38,7 @@ const commentRoutes = require('./routes/comment');
 const subscriptionRoutes = require('./routes/subscription');
 const reportRoutes = require('./routes/report');
 
-// import middlewares
+// Middlewares
 const { notFoundError, invalidTokenError } = require('./app/middlewares/errors');
 const { setUrlInfo, updateUserInfo, allowAccess, checkVersion } = require('./app/middlewares/others');
 const Subscription = require('./app/models/Subscription');
@@ -54,10 +59,11 @@ const app = express();
 app.use(cors());
 app.use(allowAccess);
 
+// Clean up expired media
 const removeExpiredMedia = () => {
   const now = new Date();
   Comment.updateMany(
-    { 'media.expiryDate': { $lte: now } }, // Find media that has expired
+    { 'media.expiryDate': { $lte: now } }, // Find expired media
     { $unset: { 'media.url': '' } }, // Remove the media URL but keep the comment/post intact
     (err, result) => {
       if (err) {
@@ -69,11 +75,24 @@ const removeExpiredMedia = () => {
   );
 };
 
-// Create HTTPS server with the express app
-const httpsServer = https.createServer(credentials, app);
+// Redirect HTTP requests to HTTPS in local environment
+if (process.env.NODE_ENV !== 'production') {
+  const httpApp = express();
+  httpApp.use((req, res) => {
+    res.redirect(`https://${req.hostname}${req.url}`);
+  });
+  const httpServer = http.createServer(httpApp);
+  httpServer.listen(80, () => {
+    console.log('HTTP Server running on port 80 and redirecting to HTTPS...');
+  });
+}
 
-// Set up Socket.io with the HTTPS server
-const io = require('socket.io')(httpsServer, {
+// Schedule job to remove expired media every hour
+schedule.scheduleJob('0 * * * *', removeExpiredMedia);
+
+// Set up Socket.io for HTTPS or HTTP
+let server = process.env.NODE_ENV !== 'production' ? httpsServer : app;
+const io = require('socket.io')(server, {
   cors: {
     origin: '*', // Adjust CORS settings as needed
     methods: ['GET', 'POST'],
@@ -81,35 +100,23 @@ const io = require('socket.io')(httpsServer, {
   },
 });
 
-
-// Redirect HTTP requests to HTTPS
-const httpApp = express();
-httpApp.use((req, res) => {
-  res.redirect(`https://${req.hostname}${req.url}`);
-});
-
-// Create HTTP server for redirecting to HTTPS
-const httpServer = require('http').createServer(httpApp);
-httpServer.listen(80, () => {
-  console.log('HTTP Server running on port 80 and redirecting to HTTPS...');
-});
-
-// Set up PeerJS server with HTTPS
+// Set up PeerJS server with HTTPS or HTTP
 const { ExpressPeerServer } = require('peer');
-const peerServer = ExpressPeerServer(httpsServer, {
+const peerServer = ExpressPeerServer(server, {
   debug: true,
 });
 app.use('/peerjs', peerServer);
 
-// Schedule job to remove expired media every hour
-schedule.scheduleJob('0 * * * *', removeExpiredMedia);
-
 const port = process.env.PORT || 3300;
-
-// Listen on HTTPS server
-httpsServer.listen(port, '0.0.0.0', () => {
-  console.log(`Secure server connected at https://0.0.0.0:${port} ...`);
-});
+if (process.env.NODE_ENV !== 'production') {
+  httpsServer.listen(port, '0.0.0.0', () => {
+    console.log(`Secure server running on https://0.0.0.0:${port}`);
+  });
+} else {
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+}
 
 // Express app configurations
 app.use(express.urlencoded({ extended: true }));
@@ -132,8 +139,8 @@ mongoose
     tlsInsecure: true,
     useFindAndModify: false, // Add this line to address the deprecation warning
   })
-  .then(() => console.log('Database connected successfully ...'))
-  .catch((err) => console.log('Could not connect to database ...', err));
+  .then(() => console.log('Database connected successfully...'))
+  .catch((err) => console.log('Could not connect to database...', err));
 
 const agenda = new Agenda({ db: { address: process.env.MONGODB_URL } });
 require('./app/jobs')(agenda);
@@ -166,7 +173,7 @@ app.use(`${routePrefix}/job`, jobRoutes);
 app.use(`${routePrefix}/service`, serviceRoutes);
 app.use(`${routePrefix}/message`, messageRoutes);
 app.use(`${routePrefix}/channel`, channelRoutes);
-app.use(`${routePrefix}/channel`, postRoutes); // corrected this line
+app.use(`${routePrefix}/channel`, postRoutes);
 app.use(`${routePrefix}/channel`, commentRoutes);
 app.use(`${routePrefix}/subscription`, subscriptionRoutes);
 app.use(`${routePrefix}/report`, reportRoutes);
@@ -187,16 +194,14 @@ function listRoutes(app) {
   });
 }
 
-// Log routes
 listRoutes(app);
 app.use(invalidTokenError);
 app.use(notFoundError);
 
 io.sockets.on('connection', (socket) => {
   console.log('Connection established');
-  const userId = socket.handshake.query.userId; // Adjust based on your implementation
+  const userId = socket.handshake.query.userId;
 
-  // Set user as online when they connect
   User.findById(userId).then((user) => {
     if (user) {
       user.setOnline();
@@ -204,7 +209,6 @@ io.sockets.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    // Set user as offline when they disconnect
     User.findById(userId).then((user) => {
       if (user) {
         user.setOffline();
@@ -226,6 +230,7 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'platforms/browser/www', 'index.html'));
 });
 
+// Initialize subscription example
 (async () => {
   const subscription = new Subscription();
   subscription.offers = [];
@@ -235,5 +240,5 @@ app.get('*', (req, res) => {
   subscription.yearPrice = 120;
   subscription.currency = 'usd';
   await subscription.save();
-  console.log('done');
+  console.log('Subscription initialized.');
 })();
