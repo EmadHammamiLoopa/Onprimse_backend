@@ -2,10 +2,15 @@ const Response = require("../controllers/Response");
 const User = require("../models/User");
 
 exports.userById = (req, res, next, id) => {
-
     console.log(`userByIduserByIduserByIduserById`); // Log the incoming user ID
 
-    console.log(`Looking for user with ID: ${id}`); // Log the incoming user ID
+    if (id === 'me') {
+        // Use the authenticated user's ID instead
+        id = req.auth._id;
+        console.log(`Looking for current user with ID: ${id}`);
+    } else {
+        console.log(`Looking for user with ID: ${id}`);
+    }
 
     User.findById(id, (err, user) => {
         if (err) {
@@ -30,6 +35,7 @@ exports.userById = (req, res, next, id) => {
         next();
     });
 };
+
 
 function getDefaultAvatar(gender) {
     switch (gender) {
