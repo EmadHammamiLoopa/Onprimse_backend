@@ -97,7 +97,6 @@ app.use(cookieParser());
 app.use('/peerjs', peerServer);
 
 mongoose.connect(process.env.MONGODB_URL, {
-  useFindAndModify: false,
   connectTimeoutMS: 60000,  // 60 seconds for connection timeout
   socketTimeoutMS: 60000    // 60 seconds for socket timeout
 })
