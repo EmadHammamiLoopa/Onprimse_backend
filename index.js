@@ -97,8 +97,6 @@ app.use(cookieParser());
 app.use('/peerjs', peerServer);
 
 mongoose.connect(process.env.MONGODB_URL, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
   connectTimeoutMS: 30000,  // Increase connection timeout to 30 seconds
   socketTimeoutMS: 45000    // Increase socket timeout to 45 seconds
 })
