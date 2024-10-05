@@ -7,6 +7,9 @@ exports.userById = (req, res, next, id) => {
     console.log(`resresresres`,res); // Log the incoming user ID
     console.log(`idididid`,id); // Log the incoming user ID
 
+    console.log(`Looking req.auth._idreq.auth._idreq.auth._id: ${req.auth._id}`);
+    console.log(`Looking req.auididididididididididididid: ${req.auth.id}`);
+    
     if (id === 'me') {
         // Use the authenticated user's ID instead
         console.log(`Looking req.auth._idreq.auth._idreq.auth._id: ${req.auth._id}`);
