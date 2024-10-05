@@ -1,4 +1,4 @@
-const mongoose = require('mongoose')
+const mongoose = require('mongoose');
 
 const jobSchema = new mongoose.Schema({
     title: {
@@ -16,8 +16,8 @@ const jobSchema = new mongoose.Schema({
         required: true
     },
     reports: [{
-        type: new mongoose.Types.ObjectId,
-        ref: 'Report'
+        type: mongoose.Schema.Types.ObjectId, // Correct ObjectId type
+        ref: 'Report' // Reference to the 'Report' model
     }],
     city: {
         type: String,
@@ -44,14 +44,14 @@ const jobSchema = new mongoose.Schema({
         }
     },
     user: {
-        type: new mongoose.Types.ObjectId,
-        ref: 'User',
+        type: mongoose.Schema.Types.ObjectId, // Correct ObjectId type
+        ref: 'User', // Reference to the 'User' model
         required: true
     },
     deletedAt: {
         type: Date,
         default: null
     }
-}, {timestamps: true})
+}, { timestamps: true });
 
-module.exports = mongoose.model('Job', jobSchema)
+module.exports = mongoose.model('Job', jobSchema);
