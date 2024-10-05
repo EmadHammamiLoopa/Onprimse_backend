@@ -24,7 +24,6 @@ const postRoutes = require('./routes/post');
 const commentRoutes = require('./routes/comment');
 const subscriptionRoutes = require('./routes/subscription');
 const reportRoutes = require('./routes/report');
-const liveRoutes = require('./routes/live');  // Add this at the top of your app.js
 
 
 // import middlewares
@@ -144,7 +143,6 @@ app.use(`${routePrefix}/channel`, postRoutes);  // corrected this line
 app.use(`${routePrefix}/channel`, commentRoutes);
 app.use(`${routePrefix}/subscription`, subscriptionRoutes);
 app.use(`${routePrefix}/report`, reportRoutes);
-app.use(`${routePrefix}/live`, liveRoutes);  // Add this line where the routes are defined
 
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 app.use('/public/images/avatars', express.static(path.join(__dirname, 'public/images/avatars')));
