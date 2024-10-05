@@ -11,11 +11,14 @@ exports.requireSignin = expressJWT({
     credentialsRequired: true,
     getToken: (req) => {
         if (req.headers.authorization && req.headers.authorization.split(' ')[0] === 'Bearer') {
-            return req.headers.authorization.split(' ')[1];
+            const token = req.headers.authorization.split(' ')[1];
+            console.log('Token found:', token);
+            return token;
         }
         return null;
     }
 });
+
 
 exports.isAuth = (req, res, next) => {
    try {
@@ -45,6 +48,7 @@ exports.isSuperAdmin = (req, res, next) => {
 
 exports.withAuthUser = (req, res, next) => {
     console.log('withAuthUser middleware: Request headers:', req.headers);
+    console.log('Authenticated user ID from token:', req.auth && req.auth._id);
 
     const userId = req.auth && req.auth._id;
     if (!userId) {

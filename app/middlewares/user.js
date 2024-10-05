@@ -2,33 +2,23 @@ const Response = require("../controllers/Response");
 const User = require("../models/User");
 
 exports.userById = (req, res, next, id) => {
-    console.log(`userByIduserByIduserByIduserById`); // Log the incoming user ID
-    console.log(`reqreqreqreq`,req); // Log the incoming user ID
-    console.log(`resresresres`,res); // Log the incoming user ID
-    console.log(`idididid`,id); // Log the incoming user ID
+    console.log('Incoming userId:', id);
+    console.log('req.auth:', req.auth);  // Check if req.auth contains _id
 
-    console.log(`Looking req.auth._idreq.auth._idreq.auth._id: ${req.auth._id}`);
-    console.log(`Looking req.auididididididididididididid: ${req.auth.id}`);
-    
     if (id === 'me') {
-        // Use the authenticated user's ID instead
-        console.log(`Looking req.auth._idreq.auth._idreq.auth._id: ${req.auth._id}`);
-        console.log(`Looking req.auididididididididididididid: ${req.auth.id}`);
-
         id = req.auth._id;
-        
-        console.log(`Looking for current user with ID: ${id}`);
+        console.log('Looking up current user with ID:', id);
     } else {
-        console.log(`Looking for user with ID: ${id}`);
+        console.log('Looking for user with ID:', id);
     }
 
     User.findById(id, (err, user) => {
         if (err) {
-            console.error(`Error finding user with ID ${id}:`, err); // Log any error during the lookup
+            console.error(`Error finding user with ID ${id}:`, err);
             return Response.sendError(res, 400, 'User not found');
         }
         if (!user) {
-            console.error(`User not found with ID: ${id}`); // Log if user is not found
+            console.error(`User not found with ID: ${id}`);
             return Response.sendError(res, 400, 'User not found');
         }
 
@@ -40,11 +30,12 @@ exports.userById = (req, res, next, id) => {
             user.avatar = [user.mainAvatar];
         }
 
-        console.log(`User found: ${user}`); // Log the found user
+        console.log('User found:', user);
         req.user = user;
         next();
     });
 };
+
 
 
 function getDefaultAvatar(gender) {
