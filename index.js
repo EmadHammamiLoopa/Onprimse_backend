@@ -97,7 +97,6 @@ app.use(morgan('tiny'));
 app.use(cookieParser());
 app.use('/peerjs', peerServer);
 
-mongoose.set('debug', true);  // Add this line
 
 mongoose.connect('mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.mongodb.net/test?retryWrites=true&w=majority&appName=Cluster0', {
   socketTimeoutMS: 600000,    // 60 seconds for socket timeout
