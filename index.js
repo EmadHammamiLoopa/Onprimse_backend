@@ -116,13 +116,13 @@ mongoose.connect('mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.
 const agenda = new Agenda({ db: { address: 'mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.mongodb.net/mydatabase?retryWrites=true&w=majority&appName=Cluster0' } });
 require('./app/jobs')(agenda);
 
-const routePrefix = 'api/v1';
+const routePrefix = '/api/v1';
 
 app.use(checkVersion);
 app.use(setUrlInfo);
 app.use(updateUserInfo);
-app.use('api/v1/auth', authRoutes);
-app.use('api/v1/message', messageRoutes);
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/message', messageRoutes);
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'e65b134003955ffbbc7965801577255841adbf17c47bb7f69cef9d875e1705b02a650a0917b6660b4e4b059539b20ec2ce90ac82fb5c4bf71c2498e95f23e477',
