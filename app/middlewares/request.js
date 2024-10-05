@@ -15,23 +15,16 @@ exports.requestById = (req, res, next, id) => {
 }
 
 exports.requestSender = (req, res, next) => {
-    const request = req.request;
-  
-    // Use .equals() to compare ObjectIds safely
-    if (!request.from.equals(req.auth._id)) {
-      return Response.sendError(res, 403, 'Access forbidden');
-    }
-  
-    User.findById(request.from, (err, user) => {
-      if (err || !user) {
-        return Response.sendError(res, 403, 'Failed to retrieve user');
-      }
-  
-      req.user = user;
-      next();
-    });
-  };
-  
+    const request = req.request
+    if(request.from != req.auth._id)
+        return Response.sendError(res, 403, 'access forbiden')
+    
+    User.findOne({_id: request.from}, (err, user) => {
+        if(err || !user) return Response.sendError(res, 403, 'failed')
+        req.user = user
+        next()
+    })
+}
 
 exports.requestReceiver = (req, res, next) => {
     const request = req.request
@@ -50,14 +43,14 @@ exports.isFriend = (req, res, next) => {
         $or: [
             {
                 $and: [
-                    {from: new mongoose.Types.ObjectId(req.auth._id)},
-                    {to: new mongoose.Types.ObjectId(req.user._id)}
+                    {from: mongoose.Types.ObjectId(req.auth._id)},
+                    {to: mongoose.Types.ObjectId(req.user._id)}
                 ]
             },
             {
                 $and: [
-                    {to:new mongoose.Types.ObjectId(req.auth._id)},
-                    {from:new mongoose.Types.ObjectId(req.user._id)}
+                    {to: mongoose.Types.ObjectId(req.auth._id)},
+                    {from: mongoose.Types.ObjectId(req.user._id)}
                 ]
             }
         ],

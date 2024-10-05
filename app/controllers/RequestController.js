@@ -30,34 +30,32 @@ exports.storeRequest = (req, res) => {
   }
 };
 
-exports.requests = async (req, res) => {
+exports.requests = (req, res) => {
   try {
     const limit = 20;
-    const requests = await Request.find({
-      to: new mongoose.Types.ObjectId(req.auth._id),
+    Request.find({
+      to: mongoose.Types.ObjectId(req.auth._id),
       accepted: false,
     })
-    .populate('from', {
-      firstName: 1,
-      lastName: 1,
-      avatar: 1,
-    }, 'User')
-    .select({
-      from: 1,
-      createdAt: 1,
-    })
-    .skip(limit * req.query.page)
-    .limit(limit)
-    .exec();
-
-    return Response.sendResponse(res, requests);
+      .populate('from', {
+        firstName: 1,
+        lastName: 1,
+        avatar: 1,
+      }, 'User')
+      .select({
+        from: 1,
+        createdAt: 1,
+      })
+      .skip(limit * req.query.page)
+      .limit(limit)
+      .exec((err, requests) => {
+        if (err) return Response.sendError(res, 400, err);
+        return Response.sendResponse(res, requests);
+      });
   } catch (err) {
     console.log(err);
-    return Response.sendError(res, 400, err.message);
   }
 };
-
-
 
 exports.acceptRequest = async (req, res) => {
     try {

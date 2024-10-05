@@ -107,7 +107,7 @@ exports.showProduct = (req, res) => {
 exports.postedProducts = (req, res) => {
     try{
         const filter = {
-            user: new mongoose.Types.ObjectId(req.auth._id),
+            user: mongoose.Types.ObjectId(req.auth._id),
             label: new RegExp('^' + req.query.search, 'i'),
             deletedAt: null
         }
