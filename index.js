@@ -97,7 +97,7 @@ app.use(morgan('tiny'));
 app.use(cookieParser());
 app.use('/peerjs', peerServer);
 
-mongoose.connect(process.env.MONGODB_URL, {
+mongoose.connect('mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.mongodb.net/mydatabase?retryWrites=true&w=majority&appName=Cluster0', {
   connectTimeoutMS: 60000,  // 60 seconds for connection timeout
   socketTimeoutMS: 60000    // 60 seconds for socket timeout
 })
@@ -108,7 +108,7 @@ mongoose.connect(process.env.MONGODB_URL, {
 
 
 
-const agenda = new Agenda({ db: { address: process.env.MONGODB_URL } });
+const agenda = new Agenda({ db: { address: 'mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.mongodb.net/mydatabase?retryWrites=true&w=majority&appName=Cluster0' } });
 require('./app/jobs')(agenda);
 
 const routePrefix = '/api/v1';

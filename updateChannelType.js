@@ -3,7 +3,7 @@ const User = require("./app/models/User");
 require('dotenv').config(); // Load environment variables from .env file, if available
 
 // Use the MONGODB_URL from your environment variables or replace it with your MongoDB connection string directly
-const db = process.env.MONGODB_URL || 'mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.mongodb.net/?retryWrites=true&w=majority';
+const db = process.env.MONGODB_URL || 'mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.mongodb.net/mydatabase?retryWrites=true&w=majority&appName=Cluster0';
 
 // Function to reset followed channels for all users
 const resetAllFollowedChannels = async () => {
