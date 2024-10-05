@@ -99,7 +99,7 @@ app.use('/peerjs', peerServer);
 
 mongoose.set('debug', true);  // Add this line
 
-mongoose.connect('mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.mongodb.net/mydatabase?retryWrites=true&w=majority&appName=Cluster0', {
+mongoose.connect('mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.mongodb.net/test?retryWrites=true&w=majority&appName=Cluster0', {
   socketTimeoutMS: 600000,    // 60 seconds for socket timeout
   connectTimeoutMS: 600000,   // 60 seconds for connection timeout
   serverSelectionTimeoutMS: 600000, // Increase server selection timeout
@@ -113,7 +113,7 @@ mongoose.connect('mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.
 
 
 
-const agenda = new Agenda({ db: { address: 'mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.mongodb.net/mydatabase?retryWrites=true&w=majority&appName=Cluster0' } });
+const agenda = new Agenda({ db: { address: 'mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.mongodb.net/test?retryWrites=true&w=majority&appName=Cluster0' } });
 require('./app/jobs')(agenda);
 
 const routePrefix = '/api/v1';

@@ -8,10 +8,7 @@ const router = express.Router();
 // Regular routes
 router.post('/checkEmail', checkEmailValidator, checkEmail);
 router.get('/user', [requireSignin, withAuthUser], authUser);
-router.post('/signin', signinValidator, (req, res, next) => {
-  console.log('POST /signin hit with body:', req.body);
-  next();
-}, signin);
+router.post('/signin', signinValidator, signin);
 router.post('/signup', signupValidator, signup);
 router.post('/signout', signout);
 router.post('/traitor', traitor);
