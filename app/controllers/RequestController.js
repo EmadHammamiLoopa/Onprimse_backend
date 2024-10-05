@@ -34,7 +34,7 @@ exports.requests = async (req, res) => {
   try {
     const limit = 20;
     const requests = await Request.find({
-      to: mongoose.Types.ObjectId(req.auth._id),
+      to: new mongoose.Types.ObjectId(req.auth._id),
       accepted: false,
     })
     .populate('from', {

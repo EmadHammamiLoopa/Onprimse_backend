@@ -47,8 +47,8 @@ module.exports = (io, socket) => {
             // Create message with productId if type is 'product'
             const message = new Message({
                 text: msg.text,
-                from: mongoose.Types.ObjectId(msg.from),
-                to: mongoose.Types.ObjectId(msg.to),
+                from: new mongoose.Types.ObjectId(msg.from),
+                to: new mongoose.Types.ObjectId(msg.to),
                 image: photo,
                 state: 'sent',
                 type: msg.type,

@@ -95,7 +95,7 @@ exports.getUsersMessages = async (req, res) => {
                 id: "$_id",
                 online: {
                     $cond: [
-                        { $in: ["$_id", Object.keys(connectedUsers).map(id => mongoose.Types.ObjectId(id))] },
+                        { $in: ["$_id", Object.keys(connectedUsers).map(id => new mongoose.Types.ObjectId(id))] },
                         true,
                         false,
                     ],

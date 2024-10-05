@@ -100,7 +100,7 @@ exports.showService = (req, res) => {
 exports.postedServices = (req, res) => {
     try{
         const filter = {
-            user: mongoose.Types.ObjectId(req.auth._id),
+            user: new mongoose.Types.ObjectId(req.auth._id),
             title: new RegExp('^' + req.query.search, 'i'),
             deletedAt: null,
         }

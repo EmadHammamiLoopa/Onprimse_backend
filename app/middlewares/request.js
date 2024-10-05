@@ -50,14 +50,14 @@ exports.isFriend = (req, res, next) => {
         $or: [
             {
                 $and: [
-                    {from: mongoose.Types.ObjectId(req.auth._id)},
-                    {to: mongoose.Types.ObjectId(req.user._id)}
+                    {from: new mongoose.Types.ObjectId(req.auth._id)},
+                    {to: new mongoose.Types.ObjectId(req.user._id)}
                 ]
             },
             {
                 $and: [
-                    {to: mongoose.Types.ObjectId(req.auth._id)},
-                    {from: mongoose.Types.ObjectId(req.user._id)}
+                    {to:new mongoose.Types.ObjectId(req.auth._id)},
+                    {from:new mongoose.Types.ObjectId(req.user._id)}
                 ]
             }
         ],
