@@ -71,7 +71,7 @@ const io = require('socket.io')(http, {
     origin: "*",
     methods: ["GET", "POST"]
   },
-  transports: ['polling'],  // WebSocket preferred, polling fallback
+  transports: ['websocket', 'polling'], // Prefer WebSocket
 });
 
 const { ExpressPeerServer } = require('peer');
@@ -127,7 +127,11 @@ app.use('/api/v1/message', messageRoutes);
 app.use(session({
   secret: process.env.SESSION_SECRET || 'e65b134003955ffbbc7965801577255841adbf17c47bb7f69cef9d875e1705b02a650a0917b6660b4e4b059539b20ec2ce90ac82fb5c4bf71c2498e95f23e477',
   resave: false,
-  saveUninitialized: true
+  saveUninitialized: true,
+  cookie: {
+    secure: true, // Ensures cookies are only sent over HTTPS
+    sameSite: 'none' // Ensures cross-site cookies work
+  }
 }));
 
 app.use(passport.initialize());
