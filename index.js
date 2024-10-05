@@ -97,11 +97,15 @@ app.use(cookieParser());
 app.use('/peerjs', peerServer);
 
 mongoose.connect(process.env.MONGODB_URL, {
-  connectTimeoutMS: 30000,  // Increase connection timeout to 30 seconds
-  socketTimeoutMS: 45000    // Increase socket timeout to 45 seconds
+  useFindAndModify: false,
+  connectTimeoutMS: 60000,  // 60 seconds for connection timeout
+  socketTimeoutMS: 60000    // 60 seconds for socket timeout
 })
 .then(() => console.log("Database connected successfully..."))
 .catch((err) => console.log("Could not connect to database...", err));
+
+
+
 
 
 const agenda = new Agenda({ db: { address: process.env.MONGODB_URL } });
@@ -183,6 +187,30 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Global Error Handler
+app.use((err, req, res, next) => {
+  // Log the error message and stack trace to the console
+  console.error(`Error: ${err.message}`);
+  
+  // Check if it's a 502 error
+  if (err.status === 502) {
+    console.error('502 Bad Gateway Error:', err.message);
+    res.status(502).send({
+      error: {
+        message: '502 Bad Gateway',
+        details: err.message || 'Bad Gateway Error'
+      }
+    });
+  } else {
+    // For all other errors, send a 500 status by default
+    res.status(err.status || 500).send({
+      error: {
+        message: err.message || 'Internal Server Error',
+        details: err.stack || ''
+      }
+    });
+  }
+});
 
 
 io.sockets.on('connection', (socket) => {
