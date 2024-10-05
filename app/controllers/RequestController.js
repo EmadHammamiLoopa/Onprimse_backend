@@ -30,38 +30,33 @@ exports.storeRequest = (req, res) => {
   }
 };
 
-exports.requests = (req, res) => {
+exports.requests = async (req, res) => {
   try {
     const limit = 20;
-    const page = parseInt(req.query.page) || 0;  // Default page is 0 if not provided
-
-    Request.find({
-      to: new mongoose.Types.ObjectId(req.auth._id),
+    const requests = await Request.find({
+      to: mongoose.Types.ObjectId(req.auth._id),
       accepted: false,
     })
-      .populate('from', {
-        firstName: 1,
-        lastName: 1,
-        avatar: 1,
-      }, 'User')
-      .select({
-        from: 1,
-        createdAt: 1,
-      })
-      .skip(limit * page)
-      .limit(limit)
-      .exec((err, requests) => {
-        if (err) {
-          console.log(err);
-          return Response.sendError(res, 400, 'Error fetching requests');
-        }
-        return Response.sendResponse(res, requests);
-      });
+    .populate('from', {
+      firstName: 1,
+      lastName: 1,
+      avatar: 1,
+    }, 'User')
+    .select({
+      from: 1,
+      createdAt: 1,
+    })
+    .skip(limit * req.query.page)
+    .limit(limit)
+    .exec();
+
+    return Response.sendResponse(res, requests);
   } catch (err) {
-    console.log('Error in request fetching:', err);
-    return Response.sendError(res, 500, 'Internal server error');
+    console.log(err);
+    return Response.sendError(res, 400, err.message);
   }
 };
+
 
 
 exports.acceptRequest = async (req, res) => {
