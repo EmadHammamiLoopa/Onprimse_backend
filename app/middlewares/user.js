@@ -3,6 +3,9 @@ const User = require("../models/User");
 
 exports.userById = (req, res, next, id) => {
     console.log(`userByIduserByIduserByIduserById`); // Log the incoming user ID
+    console.log(`reqreqreqreq`,req); // Log the incoming user ID
+    console.log(`resresresres`,res); // Log the incoming user ID
+    console.log(`idididid`,id); // Log the incoming user ID
 
     if (id === 'me') {
         // Use the authenticated user's ID instead
