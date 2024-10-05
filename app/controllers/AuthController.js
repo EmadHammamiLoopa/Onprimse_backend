@@ -131,13 +131,16 @@ exports.checkEmail = async(req, res) => {
     if(await User.findOne({email})) return Response.sendResponse(res, true)
     return Response.sendResponse(res, false)
 }
+
+
 exports.signin = async (req, res) => {
     console.log('Signin endpoint hit');
     const { email, password } = req.body;
 
     try {
         // Find the user by email
-        const user = await User.findOne({ email }).exec();
+        const normalizedEmail = email.toLowerCase();
+        const user = await User.findOne({ email: normalizedEmail }).exec();
         if (!user) {
             console.log(`User not found: ${email}`);
             return Response.sendError(res, 400, 'Cannot find user with this email');
