@@ -4,21 +4,14 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
-const Agenda = require('agenda');
+const Agenda = require("agenda");
 const path = require('path');
 const session = require('express-session');
-const passport = require('./routes/passport'); // Adjust the path to your passport configuration
+const passport = require('./routes/passport');  // Adjust the path to your passport configuration
 const schedule = require('node-schedule');
-const Comment = require('./app/models/Comment');
-const fs = require('fs');
-const http = require('http'); // Fallback to HTTP if not using HTTPS
-const https = require('https');
+const Comment = require("./app/models/Comment")
 
-// SSL setup only for local development
-let server;
-const app = express();
-
-// Import routes
+// import routes
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const productRoutes = require('./routes/product');
@@ -31,8 +24,10 @@ const postRoutes = require('./routes/post');
 const commentRoutes = require('./routes/comment');
 const subscriptionRoutes = require('./routes/subscription');
 const reportRoutes = require('./routes/report');
+const liveRoutes = require('./routes/live');  // Add this at the top of your app.js
 
-// Middlewares
+
+// import middlewares
 const { notFoundError, invalidTokenError } = require('./app/middlewares/errors');
 const { setUrlInfo, updateUserInfo, allowAccess, checkVersion } = require('./app/middlewares/others');
 const Subscription = require('./app/models/Subscription');
@@ -47,94 +42,70 @@ const { sendNotification } = require('./app/helpers');
 const Message = require('./app/models/Message');
 const Post = require('./app/models/Post');
 const { deleteUser } = require('./app/controllers/UserController');
+const connectedUsers = {};  // To store userId and socket references
 
 require('dotenv').config();
+const app = express();
 app.use(cors());
 app.use(allowAccess);
 
-// Clean up expired media
+
 const removeExpiredMedia = () => {
   const now = new Date();
   Comment.updateMany(
-    { 'media.expiryDate': { $lte: now } }, // Find expired media
-    { $unset: { 'media.url': '' } }, // Remove the media URL but keep the comment/post intact
-    (err, result) => {
-      if (err) {
-        console.error('Error removing expired media:', err);
-      } else {
-        console.log('Expired media removed:', result);
+      { 'media.expiryDate': { $lte: now } },  // Find media that has expired
+      { $unset: { 'media.url': '' } },  // Remove the media URL but keep the comment/post intact
+      (err, result) => {
+          if (err) {
+              console.error('Error removing expired media:', err);
+          } else {
+              console.log('Expired media removed:', result);
+          }
       }
-    }
   );
 };
 
-// Redirect HTTP requests to HTTPS in local environment
-if (process.env.NODE_ENV !== 'production') {
-  const privateKey = fs.readFileSync('path/to/your/local/key.pem', 'utf8');
-  const certificate = fs.readFileSync('path/to/your/local/cert.pem', 'utf8');
-  const credentials = { key: privateKey, cert: certificate };
 
-  server = https.createServer(credentials, app);
-
-  const httpApp = express();
-  httpApp.use((req, res) => {
-    res.redirect(`https://${req.hostname}${req.url}`);
-  });
-  const httpServer = http.createServer(httpApp);
-  httpServer.listen(80, () => {
-    console.log('HTTP Server running on port 80 and redirecting to HTTPS...');
-  });
-} else {
-  server = http.createServer(app);  // For production use HTTP
-}
-
-// Schedule job to remove expired media every hour
-schedule.scheduleJob('0 * * * *', removeExpiredMedia);
-
-// Set up Socket.io for HTTPS or HTTP
-const io = require('socket.io')(server, {
+const http = require('http').Server(app);
+const io = require('socket.io')(http, {
   cors: {
-    origin: '*', // Adjust CORS settings as needed
-    methods: ['GET', 'POST'],
-    credentials: true,
+    origin: "*",
+    methods: ["GET", "POST"]
   },
+  transports: ['polling'],  // WebSocket preferred, polling fallback
 });
 
-// Set up PeerJS server with HTTPS or HTTP
 const { ExpressPeerServer } = require('peer');
-const peerServer = ExpressPeerServer(server, {
-  debug: true,
+const peerServer = ExpressPeerServer(http, {
+    debug: true
 });
-app.use('/peerjs', peerServer);
+
+schedule.scheduleJob('0 * * * *', removeExpiredMedia);  // Runs every hour
 
 const port = process.env.PORT || 3300;
-server.listen(port, '0.0.0.0', () => {
-  console.log(`Server running on port ${port}`);
-});
+http.listen(port, '0.0.0.0', () => console.log(`Server running on port ${port}`));
 
-// Express app configurations
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.use(
-  helmet({
+app.use(helmet({
     crossOriginResourcePolicy: false,
-  })
-);
+  }));
 app.use(morgan('tiny'));
 app.use(cookieParser());
+app.use('/peerjs', peerServer);
 
-mongoose
-  .connect(process.env.MONGODB_URL, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-    useCreateIndex: true,
-    tlsInsecure: true,
-    useFindAndModify: false, // Add this line to address the deprecation warning
-  })
-  .then(() => console.log('Database connected successfully...'))
-  .catch((err) => console.log('Could not connect to database...', err));
+mongoose.connect(process.env.MONGODB_URL, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  connectTimeoutMS: 30000,  // Increase connection timeout to 30 seconds
+  socketTimeoutMS: 45000    // Increase socket timeout to 45 seconds
+})
+.then(() => console.log("Database connected successfully..."))
+.catch((err) => console.log("Could not connect to database...", err));
+
 
 const agenda = new Agenda({ db: { address: process.env.MONGODB_URL } });
 require('./app/jobs')(agenda);
@@ -147,18 +118,20 @@ app.use(updateUserInfo);
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/message', messageRoutes);
 
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || 'your_secret_key',
-    resave: false,
-    saveUninitialized: true,
-  })
-);
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'e65b134003955ffbbc7965801577255841adbf17c47bb7f69cef9d875e1705b02a650a0917b6660b4e4b059539b20ec2ce90ac82fb5c4bf71c2498e95f23e477',
+  resave: false,
+  saveUninitialized: true
+}));
 
 app.use(passport.initialize());
 app.use(passport.session());
+app.use((req, res, next) => {
+  req.io = io; // Attach the Socket.io instance to the req object
+  next();
+});
 
-app.get(`${routePrefix}/`, (req, res) => res.send('API is working'));
+app.get(`${routePrefix}/`, (req, res) => res.send('api is working'));
 app.use(`${routePrefix}/auth`, authRoutes);
 app.use(`${routePrefix}/user`, userRoutes);
 app.use(`${routePrefix}/request`, requestRoutes);
@@ -167,81 +140,146 @@ app.use(`${routePrefix}/job`, jobRoutes);
 app.use(`${routePrefix}/service`, serviceRoutes);
 app.use(`${routePrefix}/message`, messageRoutes);
 app.use(`${routePrefix}/channel`, channelRoutes);
-app.use(`${routePrefix}/channel`, postRoutes);
+app.use(`${routePrefix}/channel`, postRoutes);  // corrected this line
 app.use(`${routePrefix}/channel`, commentRoutes);
 app.use(`${routePrefix}/subscription`, subscriptionRoutes);
 app.use(`${routePrefix}/report`, reportRoutes);
+app.use(`${routePrefix}/live`, liveRoutes);  // Add this line where the routes are defined
+
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 app.use('/public/images/avatars', express.static(path.join(__dirname, 'public/images/avatars')));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-function listRoutes(app) {
-  app._router.stack.forEach((middleware) => {
-    if (middleware.name === 'router') {
-      middleware.handle.stack.forEach((handler) => {
-        if (handler.route) {
-          console.log(`Method: ${handler.route.stack[0].method.toUpperCase()}, Path: ${routePrefix}${handler.route.path}`);
-        }
-      });
-    }
-  });
-}
 
+
+function listRoutes(app) {
+    app._router.stack.forEach(middleware => {
+      if (middleware.name === 'router') {
+        middleware.handle.stack.forEach(handler => {
+          if (handler.route) {
+            console.log(`Method: ${handler.route.stack[0].method.toUpperCase()}, Path: ${routePrefix}${handler.route.path}`);
+          }
+        });
+      }
+    });
+  }
+  
+
+// Log routes
 listRoutes(app);
 app.use(invalidTokenError);
 app.use(notFoundError);
 
-io.sockets.on('connection', (socket) => {
-  console.log('Connection established');
-  const userId = socket.handshake.query.userId;
+app.use((req, res, next) => {
+  console.error(`404 Error: ${req.method} ${req.url}`);
+  res.status(404).send('Endpoint not found.');
+});
 
-  User.findById(userId).then((user) => {
-    if (user) {
-      user.setOnline();
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error(`Error: ${err.message}`);
+  res.status(err.status || 500).send({
+    error: {
+      message: err.message || 'Internal Server Error',
+      details: err.stack || ''
     }
   });
+});
 
-  socket.on('disconnect', () => {
-    User.findById(userId).then((user) => {
-      if (user) {
-        user.setOffline();
-        user.lastSeen = new Date(); // Update lastSeen with the current timestamp
-        user.save();
+
+
+io.sockets.on('connection', (socket) => {
+  console.log('New connection');
+  console.log('socket.handshake.query', socket.handshake.query); // Log handshake query parameters
+
+  const userId = socket.handshake.query.userId; // Extract userId from the handshake query
+  if (userId) {
+    socket.userId = userId;  // Store userId with socket for easy access
+    connectedUsers[userId] = socket;  // Store userId and corresponding socket
+
+    console.log(`User connected with ID: ${userId}`);
+    console.log('Currently connected users:', Object.keys(connectedUsers));
+
+    // Set the user as online when they connect
+    User.findById(userId)
+      .then(user => {
+        if (user) {
+          user.setOnline(); // Assuming setOnline updates the user's status
+          console.log(`User ${userId} is now online`);
+        }
+      })
+      .catch(err => {
+        console.error(`Error finding user with ID ${userId}:`, err);
+      });
+
+    // Listen for the 'connect-user' event to track user connections
+    socket.on('connect-user', (newUserId) => {
+      socket.userId = newUserId; // Attach new user ID to the socket object
+      connectedUsers[newUserId] = socket; // Store in the connectedUsers map
+      console.log(`User ${newUserId} connected to the socket.`);
+    });
+
+    // Handle disconnection
+    socket.on('disconnect', () => {
+      const userId = socket.userId;
+
+      if (userId) {
+        console.log(`User ${userId} disconnected.`);
+
+        // Remove user from connectedUsers map
+        delete connectedUsers[userId];
+
+        // Set user as offline and update last seen when they disconnect
+        User.findByIdAndUpdate(
+          userId,
+          {
+            $set: {
+              online: false,         // Set the user as offline
+              lastSeen: new Date()   // Update the lastSeen field with the current timestamp
+            }
+          },
+          { new: true } // Return the updated document
+        )
+        .then(user => {
+          if (user) {
+            console.log(`User ${userId} is now offline and last seen updated.`);
+          }
+        })
+        .catch(err => {
+          console.error(`Error updating user status for ${userId}:`, err);
+        });
+      } else {
+        console.log('No userId found for the disconnected socket.');
       }
     });
-  });
 
-  require('./app/sockets/chat')(io, socket);
-  require('./app/sockets/video')(io, socket);
+  } else {
+    console.error('No userId found in handshake query');
+  }
+
+  // Handle live stream, video, and chat event listeners here
+  require('./app/sockets/chat')(io, socket, connectedUsers);  // Pass connectedUsers
+  require('./app/sockets/video')(io, socket, connectedUsers); // Pass connectedUsers
 });
+
 
 // Serve the Cordova application for the browser platform
 app.use(express.static(path.join(__dirname, 'platforms/browser/www')));
 
-app.get('/', (req, res) => {
-  res.status(200).send('Backend is running and ready to accept requests.');
-});
-
-app.use((req, res) => {
-  console.error(`404 Error - Path: ${req.originalUrl}, Method: ${req.method}`);
-  res.status(404).send('Endpoint not found');
-});
-
 // Handle all other routes and return the index file
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'platforms/browser/www', 'index.html'));
+    res.sendFile(path.join(__dirname, 'platforms/browser/www', 'index.html'));
 });
 
-// Initialize subscription example
 (async () => {
-  const subscription = new Subscription();
-  subscription.offers = [];
-  subscription.dayPrice = 0.5;
-  subscription.weekPrice = 6;
-  subscription.monthPrice = 20;
-  subscription.yearPrice = 120;
-  subscription.currency = 'usd';
-  await subscription.save();
-  console.log('Subscription initialized.');
+    const subscription = new Subscription();
+    subscription.offers = [];
+    subscription.dayPrice = 0.5;
+    subscription.weekPrice = 6;
+    subscription.monthPrice = 20;
+    subscription.yearPrice = 120;
+    subscription.currency = 'usd';
+    await subscription.save();
+    console.log('done');
 })();
