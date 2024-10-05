@@ -97,9 +97,14 @@ app.use(morgan('tiny'));
 app.use(cookieParser());
 app.use('/peerjs', peerServer);
 
+mongoose.set('debug', true);  // Add this line
+
 mongoose.connect('mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.mongodb.net/mydatabase?retryWrites=true&w=majority&appName=Cluster0', {
-  connectTimeoutMS: 60000,  // 60 seconds for connection timeout
-  socketTimeoutMS: 60000    // 60 seconds for socket timeout
+  socketTimeoutMS: 60000,    // 60 seconds for socket timeout
+  connectTimeoutMS: 60000,   // 60 seconds for connection timeout
+  serverSelectionTimeoutMS: 60000, // Increase server selection timeout
+  maxPoolSize: 10,           // Set max pool size for better connection handling (updated option for poolSize)
+  retryWrites: true          // Enable retrying writes
 })
 .then(() => console.log("Database connected successfully..."))
 .catch((err) => console.log("Could not connect to database...", err));
