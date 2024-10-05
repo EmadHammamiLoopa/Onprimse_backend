@@ -9,7 +9,11 @@ exports.userById = (req, res, next, id) => {
 
     if (id === 'me') {
         // Use the authenticated user's ID instead
+        console.log(`Looking req.auth._idreq.auth._idreq.auth._id: ${req.auth._id}`);
+        console.log(`Looking req.auididididididididididididid: ${req.auth.id}`);
+
         id = req.auth._id;
+        
         console.log(`Looking for current user with ID: ${id}`);
     } else {
         console.log(`Looking for user with ID: ${id}`);
