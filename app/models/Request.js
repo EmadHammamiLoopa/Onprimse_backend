@@ -1,18 +1,20 @@
-const mongoose = require('mongoose')
+const mongoose = require('mongoose');
 
 const requestSchema = new mongoose.Schema({
     from: {
-        type: new mongoose.Types.ObjectId,
+        type: mongoose.Schema.Types.ObjectId,  // Correct way to define ObjectId reference
+        ref: 'User',  // Reference to User model (if applicable)
         required: true
     },
     to: {
-        type: new mongoose.Types.ObjectId,
+        type: mongoose.Schema.Types.ObjectId,  // Correct way to define ObjectId reference
+        ref: 'User',  // Reference to User model (if applicable)
         required: true
     },
     accepted: {
         type: Boolean,
         default: false
     }
-}, {timestamps: true})
+}, { timestamps: true });
 
-module.exports = mongoose.model('Request', requestSchema)
+module.exports = mongoose.model('Request', requestSchema);
