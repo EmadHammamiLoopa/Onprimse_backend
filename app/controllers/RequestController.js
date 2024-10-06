@@ -34,7 +34,7 @@ exports.requests = (req, res) => {
   try {
     const limit = 20;
     Request.find({
-      to: mongoose.Types.ObjectId(req.auth._id),
+      to: new mongoose.Types.ObjectId(req.auth._id),
       accepted: false,
     })
       .populate('from', {
@@ -53,7 +53,7 @@ exports.requests = (req, res) => {
         return Response.sendResponse(res, requests);
       });
   } catch (err) {
-    console.log(err);
+    console.error(`Error in requests: ${err.message}`, err);
   }
 };
 
