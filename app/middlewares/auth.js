@@ -1,3 +1,4 @@
+const jwt = require('jsonwebtoken');
 const expressJWT = require('express-jwt');
 const Response = require('../controllers/Response');
 const { adminCheck } = require('../helpers');
