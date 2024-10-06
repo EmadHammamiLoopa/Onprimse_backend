@@ -3,12 +3,12 @@ const User = require("../models/User");
 
 exports.userById = (req, res, next, id) => {
     console.log('--- userById Middleware ---');
-    console.log(`Received req: ${req}`);
-    console.log(`Received req: ${req.auth}`);
+    console.log('Initial received user ID:', id);  // Log the initial ID passed in
+    console.log('Received req.auth:', req.auth);   // Log req.auth to see if it's populated
 
+    // If the ID is 'me', we replace it with the authenticated user's ID
     if (id === 'me') {
-        // Check if req.auth exists
-        console.log('req.auth:', req.auth);  // Log req.auth for debugging
+        console.log("'me' detected, checking req.auth for the authenticated user...");
 
         if (!req.auth || !req.auth._id) {
             console.error('No auth object found or user not authenticated!');
@@ -19,7 +19,7 @@ exports.userById = (req, res, next, id) => {
         id = req.auth._id;
     }
 
-    console.log(`Looking for user with ID: ${id}`);
+    console.log(`Looking for user with ID: ${id}`);  // Log the final ID being used for user lookup
 
     // Find the user by ID
     User.findById(id, (err, user) => {
@@ -33,20 +33,27 @@ exports.userById = (req, res, next, id) => {
             return Response.sendError(res, 400, 'User not found');
         }
 
-        // Ensure mainAvatar and avatar are set
+        // Log the found user object before attaching it to req.user
+        console.log(`User found: ${JSON.stringify(user, null, 2)}`);
+
+        // Set default avatar if not available
         if (!user.mainAvatar) {
             user.mainAvatar = getDefaultAvatar(user.gender);
+            console.log(`No mainAvatar found for user. Setting default: ${user.mainAvatar}`);
         }
         if (!user.avatar || user.avatar.length === 0) {
             user.avatar = [user.mainAvatar];
+            console.log(`No avatar found for user. Setting avatar: ${user.avatar}`);
         }
 
-        console.log(`User found: ${JSON.stringify(user)}`);
-        req.user = user;  // Attach the found user to req.user
-        next();  // Move to the next middleware or controller
+        // Attach the found user to the request object
+        req.user = user;
+        console.log('User attached to req.user. Proceeding to next middleware...');
+
+        // Proceed to the next middleware or controller
+        next();
     });
 };
-
 
 
 
