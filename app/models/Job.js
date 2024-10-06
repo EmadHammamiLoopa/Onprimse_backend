@@ -16,7 +16,7 @@ const jobSchema = new mongoose.Schema({
         required: true
     },
     reports: [{
-        type: new mongoose.Types.ObjectId,
+        type: mongoose.Types.ObjectId,
         ref: 'Report'
     }],
     city: {
@@ -44,7 +44,7 @@ const jobSchema = new mongoose.Schema({
         }
     },
     user: {
-        type: new mongoose.Types.ObjectId,
+        type:  mongoose.Types.ObjectId,
         ref: 'User',
         required: true
     },
