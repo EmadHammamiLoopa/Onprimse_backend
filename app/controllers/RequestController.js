@@ -36,7 +36,7 @@ exports.requests = async (req, res) => {
 
     // Perform the query using async/await
     const requests = await Request.find({
-      to: new new mongoose.Types.ObjectId(req.auth._id),
+      to:  new mongoose.Types.ObjectId(req.auth._id),
       accepted: false,
     })
       .populate('from', {
