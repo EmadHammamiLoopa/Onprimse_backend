@@ -3,7 +3,8 @@ const User = require("../models/User");
 
 exports.userById = (req, res, next, id) => {
     console.log('--- userById Middleware ---');
-    console.log(`Received user ID: ${req._id}`);
+    console.log(`Received req: ${req}`);
+    console.log(`Received req: ${req.auth}`);
 
     if (id === 'me') {
         // Check if req.auth exists
