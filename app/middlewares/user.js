@@ -68,17 +68,23 @@ exports.isNotFriend = (req, res, next) => {
     next();
 }
 
-exports.isNotBlocked = (req, res, next) => {
-    try{
-        const user = req.user;
-        User.findOne({_id: req.auth._id}, (err, authUser) => {
-            if(authUser.blockedUsers.includes(user._id) 
-            || user.blockedUsers.includes(authUser._id)){
-                return Response.sendError(res, 404, 'not found');
-            }
-            next();
-        });
-    }catch(err){
-        console.log(err);
+exports.isNotBlocked = async (req, res, next) => {
+    try {
+        const user = req.user; // The user being checked
+        const authUser = await User.findOne({ _id: req.auth._id }); // Fetch the authenticated user
+
+        if (!authUser) {
+            return Response.sendError(res, 404, 'Authenticated user not found');
+        }
+
+        // Check if either user has blocked the other
+        if (authUser.blockedUsers.includes(user._id) || user.blockedUsers.includes(authUser._id)) {
+            return Response.sendError(res, 404, 'You or the other user is blocked');
+        }
+
+        next(); // Proceed to the next middleware or controller
+    } catch (err) {
+        console.log('Error in isNotBlocked middleware:', err);
+        return Response.sendError(res, 500, 'An error occurred while checking blocked status');
     }
-}
+};

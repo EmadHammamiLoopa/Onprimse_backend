@@ -14,6 +14,6 @@ router.delete('/:messageId', [requireSignin, withAuthUser], deleteMessage);
 
 
 
-router.param('userId', userById);
+router.param('userId',withAuthUser, userById);  // Apply requireSignin first
 
 module.exports = router
