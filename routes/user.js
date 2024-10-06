@@ -78,7 +78,16 @@ router.post('/:userId/report', [requireSignin], reportUser);
 router.post('/:userId/ban', [requireSignin, isAdmin], banUser);
 router.post('/:userId/unban', [requireSignin, isAdmin], unbanUser);
 router.get('/profile/me', [requireSignin, withAuthUser], (req, res) => {
-    req.params.userId = req.auth._id; // Ensure we use the authenticated user's ID
+    // Log the authenticated user's information
+    console.log('Authenticated user in /profile/me route:', req.auth);
+
+    // Ensure we use the authenticated user's ID
+    req.params.userId = req.auth._id;
+
+    // Log the userId being set
+    console.log('Setting req.params.userId to:', req.params.userId);
+
+    // Call getUserProfile function and pass the modified request
     getUserProfile(req, res);
 });
 
