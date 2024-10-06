@@ -652,7 +652,7 @@ exports.getUsers = async (req, res) => {
 // Helper function to build the base filter
 function buildBaseFilter(req) {
     const filter = {
-        _id: { $ne: mongoose.Types.ObjectId(req.auth._id), $nin: req.authUser.blockedUsers },
+        _id: { $ne: new mongoose.Types.ObjectId(req.auth._id), $nin: req.authUser.blockedUsers },
         blockedUsers: { $ne: req.authUser._id },
         friends: { $ne: req.authUser._id },
         role: { $nin: ['ADMIN', 'SUPER ADMIN'] },
@@ -984,14 +984,14 @@ exports.blockUser = async(req, res) => {
                     $or: [
                         {
                             $and: [
-                                {from: mongoose.Types.ObjectId(req.auth._id)},
-                                {to: mongoose.Types.ObjectId(req.user._id)}
+                                {from: new mongoose.Types.ObjectId(req.auth._id)},
+                                {to: new mongoose.Types.ObjectId(req.user._id)}
                             ]
                         },
                         {
                             $and: [
-                                {to: mongoose.Types.ObjectId(req.auth._id)},
-                                {from: mongoose.Types.ObjectId(req.user._id)}
+                                {to: new mongoose.Types.ObjectId(req.auth._id)},
+                                {from: new mongoose.Types.ObjectId(req.user._id)}
                             ]
                         }
                     ]
