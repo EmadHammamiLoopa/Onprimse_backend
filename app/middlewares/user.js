@@ -5,7 +5,19 @@ exports.userById = (req, res, next, id) => {
     console.log('--- userById Middleware ---');
     console.log(`Received user ID: ${id}`);
 
-    // Just use the userId directly, no need to handle 'me'
+    if (id === 'me') {
+        // Check if req.auth exists
+        console.log('req.auth:', req.auth);  // Log req.auth for debugging
+
+        if (!req.auth || !req.auth._id) {
+            console.error('No auth object found or user not authenticated!');
+            return Response.sendError(res, 400, 'Authentication error: User not authenticated');
+        }
+
+        console.log(`Replacing 'me' with authenticated user's ID: ${req.auth._id}`);
+        id = req.auth._id;
+    }
+
     console.log(`Looking for user with ID: ${id}`);
 
     // Find the user by ID
@@ -29,8 +41,8 @@ exports.userById = (req, res, next, id) => {
         }
 
         console.log(`User found: ${JSON.stringify(user)}`);
-        req.user = user; // Attach the found user to req.user
-        next(); // Move to the next middleware or controller
+        req.user = user;  // Attach the found user to req.user
+        next();  // Move to the next middleware or controller
     });
 };
 
