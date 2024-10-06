@@ -731,8 +731,8 @@ function hasMoreUsers(users, limit, page) {
 function getRequestPopulationQuery(req) {
     return {
         $or: [
-            { from: mongoose.Types.ObjectId(req.auth._id) },
-            { to: mongoose.Types.ObjectId(req.auth._id) }
+            { from: new mongoose.Types.ObjectId(req.auth._id) },
+            { to: new mongoose.Types.ObjectId(req.auth._id) }
         ]
     };
 }
@@ -749,8 +749,8 @@ function getUserSelectFields(req) {
         avatar: 1,
         mainAvatar: 1,
         birthDate: { $cond: [{ $eq: ["$ageVisible", true] }, "$birthDate", null] },
-        followed: { $in: [mongoose.Types.ObjectId(req.auth._id), "$followers"] },
-        friend: { $in: [mongoose.Types.ObjectId(req.auth._id), "$friends"] },
+        followed: { $in: [new mongoose.Types.ObjectId(req.auth._id), "$followers"] },
+        friend: { $in: [new mongoose.Types.ObjectId(req.auth._id), "$friends"] },
         requests: 1,
         profession: 1,
         interests: 1,
@@ -897,7 +897,7 @@ exports.getFriends = async (req, res) => {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        const userId = mongoose.Types.ObjectId(req.authUser._id);
+        const userId = new mongoose.Types.ObjectId(req.authUser._id);
 
         const user = await User.findById(userId);
         if (!user) {
