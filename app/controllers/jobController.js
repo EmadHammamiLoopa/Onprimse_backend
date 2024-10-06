@@ -104,7 +104,7 @@ exports.showJob = (req, res) => {
 exports.postedJobs = (req, res) => {
     try{
         const filter = {
-            user: mongoose.Types.ObjectId(req.auth._id),
+            user: new mongoose.Types.ObjectId(req.auth._id),
             title: new RegExp('^' + req.query.search, 'i'),
             deletedAt: null
         }

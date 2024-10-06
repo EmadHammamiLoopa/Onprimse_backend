@@ -119,7 +119,7 @@ exports.allChannels = (req, res) => {
 exports.exploreChannels = async (req, res) => {
     try {
         const limit = 20;
-        const userId = mongoose.Types.ObjectId(req.auth._id);
+        const userId = new mongoose.Types.ObjectId(req.auth._id);
         const { level = 'city', search = '', page = 0 } = req.query;
 
         let filter = {
@@ -204,7 +204,7 @@ exports.exploreChannels = async (req, res) => {
 exports.exploreCountryChannels = async (req, res) => {
     try {
         const limit = 20;
-        const userId = mongoose.Types.ObjectId(req.auth._id);
+        const userId = new mongoose.Types.ObjectId(req.auth._id);
 
         // Fetch channels from the user's country
         const countryFilter = {
@@ -252,7 +252,7 @@ exports.exploreCountryChannels = async (req, res) => {
 exports.exploreGlobalChannels = async (req, res) => {
     try {
         const limit = 20;
-        const userId = mongoose.Types.ObjectId(req.auth._id);
+        const userId = new mongoose.Types.ObjectId(req.auth._id);
 
         // Fetch global channels
         const globalFilter = {
@@ -321,7 +321,7 @@ exports.followedChannels = async (req, res) => {
         const filter = {
             followers: {
                 $elemMatch: {
-                    $eq: mongoose.Types.ObjectId(req.auth._id)
+                    $eq: new mongoose.Types.ObjectId(req.auth._id)
                 }
             },
             name: new RegExp('^' + req.query.search, 'i'),
@@ -361,7 +361,7 @@ exports.followedChannels = async (req, res) => {
 
 
 const createStaticChannelsForCity = async (city, country, user) => {
-    const systemUserId = mongoose.Types.ObjectId('66c7ba8cb077a84040bd9ee6');
+    const systemUserId = new mongoose.Types.ObjectId('66c7ba8cb077a84040bd9ee6');
     
     const staticChannels = [
         {
@@ -495,7 +495,7 @@ const unfollowOldCityStaticChannels = async (req, user) => {
     const filter = {
         followers: {
             $elemMatch: {
-                $eq: mongoose.Types.ObjectId(req.auth._id)
+                $eq: new mongoose.Types.ObjectId(req.auth._id)
             }
         },
         type: { $in: ['static', 'static_events', 'static_dating'] }, // Check for these types of channels
@@ -559,7 +559,7 @@ const unfollowOldCityStaticChannels = async (req, user) => {
 exports.myChannels = (req, res) => {
     try{
         const filter = {
-            user: mongoose.Types.ObjectId(req.auth._id),
+            user: new mongoose.Types.ObjectId(req.auth._id),
             name: new RegExp('^' + req.query.search, 'i'),
             enabled: true
         }

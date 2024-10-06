@@ -2,11 +2,11 @@ const mongoose = require('mongoose')
 
 const requestSchema = new mongoose.Schema({
     from: {
-        type: mongoose.Types.ObjectId,
+        type: new mongoose.Types.ObjectId,
         required: true
     },
     to: {
-        type: mongoose.Types.ObjectId,
+        type: new mongoose.Types.ObjectId,
         required: true
     },
     accepted: {

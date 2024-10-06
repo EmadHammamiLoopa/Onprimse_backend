@@ -9,8 +9,8 @@ const Response = require('./Response');
 exports.indexMessages = async (req, res) => {
     const limit = 20;
     const page = +req.query.page || 0;
-    const authUserId = mongoose.Types.ObjectId(req.auth._id);
-    const userId = mongoose.Types.ObjectId(req.params.userId);
+    const authUserId = new mongoose.Types.ObjectId(req.auth._id);
+    const userId = new mongoose.Types.ObjectId(req.params.userId);
 
     const filter = {
         $or: [
@@ -95,7 +95,7 @@ exports.getUsersMessages = async (req, res) => {
                 id: "$_id",
                 online: {
                     $cond: [
-                        { $in: ["$_id", Object.keys(connectedUsers).map(id => mongoose.Types.ObjectId(id))] },
+                        { $in: ["$_id", Object.keys(connectedUsers).map(id => new mongoose.Types.ObjectId(id))] },
                         true,
                         false,
                     ],

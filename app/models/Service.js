@@ -17,7 +17,7 @@ const serviceSchema = new mongoose.Schema({
     },
     
     reports: [{
-        type: mongoose.Types.ObjectId,
+        type: new mongoose.Types.ObjectId,
         ref: 'Report'
     }],
     city: {
@@ -45,7 +45,7 @@ const serviceSchema = new mongoose.Schema({
         }
     },
     user: {
-        type: mongoose.Types.ObjectId,
+        type: new mongoose.Types.ObjectId,
         ref: 'User',
         required: true
     },
