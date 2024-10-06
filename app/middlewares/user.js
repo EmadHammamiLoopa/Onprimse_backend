@@ -2,23 +2,18 @@ const Response = require("../controllers/Response");
 const User = require("../models/User");
 
 exports.userById = (req, res, next, id) => {
-    console.log('Incoming userId:', id);
-    console.log('req.auth:', req.auth);  // Check if req.auth contains _id
 
-    if (id === 'me') {
-        id = req.auth._id;
-        console.log('Looking up current user with ID:', id);
-    } else {
-        console.log('Looking for user with ID:', id);
-    }
+    console.log(`userByIduserByIduserByIduserById`); // Log the incoming user ID
+
+    console.log(`Looking for user with ID: ${id}`); // Log the incoming user ID
 
     User.findById(id, (err, user) => {
         if (err) {
-            console.error(`Error finding user with ID ${id}:`, err);
+            console.error(`Error finding user with ID ${id}:`, err); // Log any error during the lookup
             return Response.sendError(res, 400, 'User not found');
         }
         if (!user) {
-            console.error(`User not found with ID: ${id}`);
+            console.error(`User not found with ID: ${id}`); // Log if user is not found
             return Response.sendError(res, 400, 'User not found');
         }
 
@@ -30,12 +25,11 @@ exports.userById = (req, res, next, id) => {
             user.avatar = [user.mainAvatar];
         }
 
-        console.log('User found:', user);
+        console.log(`User found: ${user}`); // Log the found user
         req.user = user;
         next();
     });
 };
-
 
 
 function getDefaultAvatar(gender) {
