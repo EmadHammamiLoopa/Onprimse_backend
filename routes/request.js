@@ -10,8 +10,8 @@ const router = express.Router()
 router.post('/accept/:requestId', [requireSignin, requestReceiver, isNotBlocked, withAuthUser], acceptRequest)
 router.post('/reject/:requestId', [requireSignin, requestReceiver, isNotBlocked], rejectRequest)
 router.post('/cancel/:requestId', [requireSignin, requestSender, isNotBlocked], cancelRequest)
+router.post('/:userId', [requireSignin, withAuthUser, isNotFriend, requestNotExist, sendRequestPermission], storeRequest);
 
-router.post('/:userId', [requireSignin, isNotFriend, requestNotExist, withAuthUser, sendRequestPermission], storeRequest)
 router.get('/', [requireSignin], requests)
 
 router.param('requestId', requestById)
