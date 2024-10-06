@@ -57,7 +57,13 @@ router.put('/profile/main-avatar/:userId', [requireSignin, withAuthUser], update
 router.post('/friends/remove/:userId', [requireSignin, withAuthUser], removeFriendship);
 router.put('/:userId', [requireSignin, withAuthUser, userUpdateValidator], updateUser);
 router.get('/users', [requireSignin, withAuthUser], getUsers);
-router.get('/profile/:userId', [requireSignin, withAuthUser, isNotBlocked], getUserProfile);
+router.get('/profile/:userId', [requireSignin, withAuthUser, isNotBlocked], (req, res) => {
+    if (req.params.userId === 'me') {
+        req.params.userId = req.auth._id;
+    }
+    // Proceed to call getUserProfile with the modified userId
+    getUserProfile(req, res);
+});
 
 router.put('/', [requireSignin, withAuthUser, userUpdateValidator], updateUser);
 router.put('/:userId/email', [requireSignin, updateEmailValidator, withAuthUser], updateEmail);
@@ -77,19 +83,6 @@ router.get('/:userId', [requireSignin, isAuth], showUser);
 router.post('/:userId/report', [requireSignin], reportUser);
 router.post('/:userId/ban', [requireSignin, isAdmin], banUser);
 router.post('/:userId/unban', [requireSignin, isAdmin], unbanUser);
-router.get('/profile/me', [requireSignin, withAuthUser], (req, res) => {
-    // Log the authenticated user's information
-    console.log('Authenticated user in /profile/me route:', req.auth);
-
-    // Ensure we use the authenticated user's ID
-    req.params.userId = req.auth._id;
-
-    // Log the userId being set
-    console.log('Setting req.params.userId to:', req.params.userId);
-
-    // Call getUserProfile function and pass the modified request
-    getUserProfile(req, res);
-});
 
 // Parameter middleware
 router.param('userId', userById);  // Apply requireSignin first
