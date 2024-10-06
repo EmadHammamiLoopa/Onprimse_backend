@@ -652,7 +652,7 @@ exports.getUsers = async (req, res) => {
 // Helper function to build the base filter
 function buildBaseFilter(req) {
     const filter = {
-        _id: { $ne: new new mongoose.Types.ObjectId(req.auth._id), $nin: req.authUser.blockedUsers },
+        _id: { $ne: new mongoose.Types.ObjectId(req.auth._id), $nin: req.authUser.blockedUsers },  // Fixed extra "new"
         blockedUsers: { $ne: req.authUser._id },
         friends: { $ne: req.authUser._id },
         role: { $nin: ['ADMIN', 'SUPER ADMIN'] },
@@ -666,6 +666,7 @@ function buildBaseFilter(req) {
 
     return filter;
 }
+
 
 // Helper function to find users in a specific city
 async function findUsersInCity(req, filter, skip, limit) {
