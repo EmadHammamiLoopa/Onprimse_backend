@@ -57,13 +57,7 @@ router.put('/profile/main-avatar/:userId', [requireSignin, withAuthUser], update
 router.post('/friends/remove/:userId', [requireSignin, withAuthUser], removeFriendship);
 router.put('/:userId', [requireSignin, withAuthUser, userUpdateValidator], updateUser);
 router.get('/users', [requireSignin, withAuthUser], getUsers);
-router.get('/profile/:userId', [requireSignin, withAuthUser, isNotBlocked], (req, res) => {
-    if (req.params.userId === 'me') {
-        req.params.userId = req.auth._id;
-    }
-    // Proceed to call getUserProfile with the modified userId
-    getUserProfile(req, res);
-});
+router.get('/profile/:userId', [requireSignin, withAuthUser, isNotBlocked], getUserProfile);
 
 router.put('/', [requireSignin, withAuthUser, userUpdateValidator], updateUser);
 router.put('/:userId/email', [requireSignin, updateEmailValidator, withAuthUser], updateEmail);
