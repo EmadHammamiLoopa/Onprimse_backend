@@ -79,6 +79,6 @@ router.post('/:userId/ban', [requireSignin, isAdmin], banUser);
 router.post('/:userId/unban', [requireSignin, isAdmin], unbanUser);
 
 // Parameter middleware
-router.param('userId', requireSignin, userById);  // Apply requireSignin first
+router.param('userId', userById);  // Apply requireSignin first
 
 module.exports = router;
