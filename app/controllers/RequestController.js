@@ -30,10 +30,12 @@ exports.storeRequest = (req, res) => {
   }
 };
 
-exports.requests = (req, res) => {
+exports.requests = async (req, res) => {
   try {
     const limit = 20;
-    Request.find({
+
+    // Perform the query using async/await
+    const requests = await Request.find({
       to: new mongoose.Types.ObjectId(req.auth._id),
       accepted: false,
     })
@@ -48,14 +50,17 @@ exports.requests = (req, res) => {
       })
       .skip(limit * req.query.page)
       .limit(limit)
-      .exec((err, requests) => {
-        if (err) return Response.sendError(res, 400, err);
-        return Response.sendResponse(res, requests);
-      });
+      .exec(); // No callback here, use exec() as a promise
+
+    // Send the response with the retrieved requests
+    return Response.sendResponse(res, requests);
+    
   } catch (err) {
     console.error(`Error in requests: ${err.message}`, err);
+    return Response.sendError(res, 400, 'Failed to fetch requests.');
   }
 };
+
 
 exports.acceptRequest = async (req, res) => {
     try {
