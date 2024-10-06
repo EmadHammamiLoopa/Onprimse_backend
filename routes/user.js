@@ -77,6 +77,10 @@ router.get('/:userId', [requireSignin, isAuth], showUser);
 router.post('/:userId/report', [requireSignin], reportUser);
 router.post('/:userId/ban', [requireSignin, isAdmin], banUser);
 router.post('/:userId/unban', [requireSignin, isAdmin], unbanUser);
+router.get('/profile/me', [requireSignin, withAuthUser], (req, res) => {
+    req.params.userId = req.auth._id; // Ensure we use the authenticated user's ID
+    getUserProfile(req, res);
+});
 
 // Parameter middleware
 router.param('userId', userById);  // Apply requireSignin first
