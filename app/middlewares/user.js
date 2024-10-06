@@ -9,6 +9,7 @@ exports.userById = (req, res, next, id) => {
     // If the ID is 'me', we replace it with the authenticated user's ID
     if (id === 'me') {
         console.log("'me' detected, checking req.auth for the authenticated user...");
+        console.log("'req.auth._id auth for the authenticated user...",req.auth._id);
 
         if (!req.auth || !req.auth._id) {
             console.error('No auth object found or user not authenticated!');

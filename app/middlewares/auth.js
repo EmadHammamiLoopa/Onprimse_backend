@@ -59,13 +59,20 @@ exports.withAuthUser = async (req, res, next) => {
     }
 
     const token = authHeader.split(' ')[1];
-    console.log('Token from Authorization header:', token);  // <-- Log the token extracted
+    console.log('Token from Authorization header:', token);  // Log the token extracted
 
     try {
         // Verify the token and extract the user ID
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.auth = decoded;
-        console.log('Decoded JWT:', decoded); // <-- Log the decoded token
+
+        // Ensure _id exists in the decoded token
+        if (!req.auth._id) {
+            console.error('Token does not contain _id:', decoded);
+            return Response.sendError(res, 400, 'Invalid token structure');
+        }
+
+        console.log('Decoded JWT:', decoded);  // Log the decoded token for further debugging
 
         // Fetch the user from the database using async/await
         const user = await User.findById(req.auth._id);
@@ -76,10 +83,11 @@ exports.withAuthUser = async (req, res, next) => {
 
         // Attach the authenticated user to req.authUser
         req.authUser = user;
-        console.log('Authenticated user:', user); // <-- Log the user found by the token's ID
+        console.log('Authenticated user:', user);  // Log the user found by the token's ID
         next();
     } catch (err) {
-        console.error('Token verification failed:', err);
+        console.error('Token verification failed:', err);  // Log any error during token verification
         return Response.sendError(res, 401, 'Unauthorized: Invalid token');
     }
 };
+
