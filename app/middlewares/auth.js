@@ -11,14 +11,16 @@ exports.requireSignin = expressJWT({
     userProperty: 'auth',
     credentialsRequired: true,
     getToken: (req) => {
+        console.log('Headers:', req.headers); // <-- Add this log to check headers
         if (req.headers.authorization && req.headers.authorization.split(' ')[0] === 'Bearer') {
             const token = req.headers.authorization.split(' ')[1];
-            console.log('Token found:', token);
+            console.log('Token found in Authorization header:', token); // <-- Add this log to ensure token is found
             return token;
         }
         return null;
     }
 });
+
 
 
 exports.isAuth = (req, res, next) => {
@@ -57,12 +59,13 @@ exports.withAuthUser = async (req, res, next) => {
     }
 
     const token = authHeader.split(' ')[1];
+    console.log('Token from Authorization header:', token);  // <-- Log the token extracted
 
     try {
         // Verify the token and extract the user ID
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.auth = decoded;
-        console.log('Authenticated user ID from token:', req.auth._id);
+        console.log('Decoded JWT:', decoded); // <-- Log the decoded token
 
         // Fetch the user from the database using async/await
         const user = await User.findById(req.auth._id);
@@ -73,7 +76,7 @@ exports.withAuthUser = async (req, res, next) => {
 
         // Attach the authenticated user to req.authUser
         req.authUser = user;
-        console.log('withAuthUser: Authenticated user:', user);
+        console.log('Authenticated user:', user); // <-- Log the user found by the token's ID
         next();
     } catch (err) {
         console.error('Token verification failed:', err);

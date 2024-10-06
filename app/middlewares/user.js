@@ -5,24 +5,7 @@ exports.userById = (req, res, next, id) => {
     console.log('--- userById Middleware ---');
     console.log(`Received user ID: ${id}`);
 
-    // Check if the ID is 'me' and replace it with the authenticated user's ID
-    if (id === 'me') {
-
-        console.error('req.auth found req.authreq.auth',req.auth);
-        console.error('req.auth._id authenticated',req.auth._id);
-        console.error('req.auth.id authenticated',req.auth.id);
-
-        if (!req.auth || !req.auth._id) {
-            console.error('No auth object found or user not authenticated!');
- 
-
-            return Response.sendError(res, 400, 'Authentication error: User not authenticated');
-        }
-
-        console.log(`Replacing 'me' with authenticated user's ID: ${req.auth._id}`);
-        id = req.auth._id;
-    }
-
+    // Just use the userId directly, no need to handle 'me'
     console.log(`Looking for user with ID: ${id}`);
 
     // Find the user by ID
