@@ -5,47 +5,59 @@ const Content = require("../models/Content"); // Assuming a Content model for ma
 const Response = require("./Response");
 
 
-exports.allReports = (req, res) => {
+exports.allReports = async (req, res) => {
     try {
-        const dashParams = extractDashParams(req, ['entity.name'])
-        Report.aggregate()
-        .match(dashParams.filter)
-        .project({
-            message: 1,
-            reference: "$entity.name",
-            referenceId: "$entity._id",
-            userId: "$user",
-            solved: 1,
-            createdAt: 1
-        })
-        .sort(dashParams.sort)
-        .skip(dashParams.skip)
-        .limit(dashParams.limit)
-        .exec(async(err, reports) => {
-            if(err || !reports) return Response.sendError(res, 500, 'Server error, please try again later');
-            const count = await Report.find(dashParams.filter).countDocuments();
-            return Response.sendResponse(res, {
-                docs: reports,
-                totalPages: Math.ceil(count / dashParams.limit)
-            });
+        const dashParams = extractDashParams(req, ['entity.name']);
+        
+        const reports = await Report.aggregate()
+            .match(dashParams.filter)
+            .project({
+                message: 1,
+                reference: "$entity.name",
+                referenceId: "$entity._id",
+                userId: "$user",
+                solved: 1,
+                createdAt: 1
+            })
+            .sort(dashParams.sort)
+            .skip(dashParams.skip)
+            .limit(dashParams.limit);
+
+        if (!reports) return Response.sendError(res, 500, 'Server error, please try again later');
+
+        const count = await Report.find(dashParams.filter).countDocuments();
+
+        return Response.sendResponse(res, {
+            docs: reports,
+            totalPages: Math.ceil(count / dashParams.limit)
         });
     } catch (error) {
         console.log(error);
+        return Response.sendError(res, 500, 'Server error');
     }
-}
+};
 
-exports.showReport = (req, res) => {
-    Report.findOne({_id: req.report._id}, {
-        message: 1,
-        reference: "$entity.name",
-        referenceId: "$entity._id",
-        user: 1,
-        solved: 1,
-        createdAt: 1
-    }, (err, report) => {
-        return Response.sendResponse(res, report)
-    })
-}
+
+exports.showReport = async (req, res) => {
+    try {
+        const report = await Report.findOne({ _id: req.report._id }, {
+            message: 1,
+            reference: "$entity.name",
+            referenceId: "$entity._id",
+            user: 1,
+            solved: 1,
+            createdAt: 1
+        });
+
+        if (!report) return Response.sendError(res, 404, 'Report not found');
+
+        return Response.sendResponse(res, report);
+    } catch (error) {
+        console.log(error);
+        return Response.sendError(res, 500, 'Server error');
+    }
+};
+
 
 exports.reportUser = async (req, res) => {
     try {
@@ -110,7 +122,6 @@ exports.blockUser = async (req, res) => {
 
 exports.reviewReports = async (req, res) => {
     try {
-        // Assuming 'solved' field indicates whether a report has been resolved
         const unresolvedReports = await Report.find({ solved: false })
             .populate('user', 'username') // Assuming you want to show user info
             .populate('entity', 'name') // Populate based on entity type if possible
@@ -122,32 +133,28 @@ exports.reviewReports = async (req, res) => {
     }
 };
 
+
 exports.takeActionOnReport = async (req, res) => {
     const { reportId } = req.params;
     const { action, notes } = req.body; // 'action' could be 'ignore', 'removeContent', 'banUser'
 
     try {
         const report = await Report.findById(reportId);
-        if (!report) {
-            return Response.sendError(res, 404, 'Report not found');
-        }
+        if (!report) return Response.sendError(res, 404, 'Report not found');
 
         // Implement action logic here
         switch (action) {
             case 'ignore':
-                // Mark the report as solved/ignored but keep the content/user active
                 report.solved = true;
                 report.notes = notes;
                 break;
             case 'removeContent':
-                // Additional logic to remove the content
-                await Content.remove({ _id: report.entity });
+                await Content.deleteOne({ _id: report.entity });
                 report.solved = true;
                 report.notes = notes;
                 break;
             case 'banUser':
-                // Additional logic to ban the user
-                await User.findByIdAndUpdate(report.entity, { isActive: false }); // Assuming 'isActive' flags user status
+                await User.findByIdAndUpdate(report.entity, { isActive: false });
                 report.solved = true;
                 report.notes = notes;
                 break;

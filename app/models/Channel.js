@@ -19,7 +19,7 @@ const channelSchema = new mongoose.Schema({
             type: String,
             default: '/channels/channel-default.png' // Path to the channel's display picture
         },
-        type: {
+        format: {
             type: String,
             default: 'png' // Image format of the display picture
         }
@@ -70,12 +70,14 @@ const channelSchema = new mongoose.Schema({
     approvedAt: Date, // Timestamp when the channel was approved
     photos: [{
         path: String,
-        type: String,
-        default: 'png' // Additional photos related to the channel
+        format: {
+            type: String,
+            default: 'png' // Image format of additional photos
+        }
     }],
     type: {
         type: String,
-        enum: ['user', 'static','static_events', 'static_dating'], // Channel type: either user-created or static
+        enum: ['user', 'static', 'static_events', 'static_dating'], // Channel type: either user-created or static
         required: true // Ensure the type field is always set
     },
     calendar: {

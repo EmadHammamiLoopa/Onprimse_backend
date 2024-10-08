@@ -8,12 +8,12 @@ const {
   deleteChannel,
   allChannels,
   showChannel,
-  disableChannel,
+  //disableChannel,
   updateChannel,
   clearChannelReports,
   reportChannel,
   toggleChannelStatus,
-  getCityChannels,
+  //getCityChannels,
   toggleChannelApprovement,
 } = require('../app/controllers/ChannelController');
 

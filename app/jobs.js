@@ -11,22 +11,22 @@ const User = require("./models/User");
 
 module.exports = (agenda) => {
     // Define the "expired subscription" task
-    agenda.define("expired subscription", async (job) => {
+    agenda.define("expired subscription", async () => {
         const date = new Date();
         try {
-            await User.updateMany({
+            const result = await User.updateMany({
                 "subscription.expireDate": { $lt: date }
             }, {
                 $set: { subscription: null }
             });
-            console.log('Expired subscriptions updated.');
+            console.log(`${result.nModified} expired subscriptions updated.`);
         } catch (err) {
             console.error('Error updating expired subscriptions:', err);
         }
     });
 
     // Define the "delete users" task
-    agenda.define("delete users", async (job) => {
+    agenda.define("delete users", async () => {
         const date = new Date();
         date.setTime(date.getTime() - 4 * 24 * 60 * 60 * 1000); // 4 days
 
@@ -34,9 +34,10 @@ module.exports = (agenda) => {
             const users = await User.find({
                 deletedAt: { $ne: null, $lt: date }
             });
-            users.forEach(user => {
-                deleteUser(user);
-            });
+
+            // Delete users concurrently
+            await Promise.all(users.map(user => deleteUser(user)));
+            console.log(`Deleted ${users.length} users and their related data.`);
         } catch (err) {
             console.error('Error finding users to delete:', err);
         }
@@ -45,22 +46,19 @@ module.exports = (agenda) => {
     // Function to delete a user and all related data
     const deleteUser = async (user) => {
         try {
-            await Post.deleteMany({ user: user._id });
-            await Comment.deleteMany({ user: user._id });
-            await Job.deleteMany({ user: user._id });
-            await Product.deleteMany({ user: user._id });
-            await Service.deleteMany({ user: user._id });
-            await Report.deleteMany({ user: user._id });
-            await Request.deleteMany({
-                $or: [{ from: user._id }, { to: user._id }]
-            });
-            await Follow.deleteMany({
-                $or: [{ from: user._id }, { to: user._id }]
-            });
-            await Message.deleteMany({
-                $or: [{ from: user._id }, { to: user._id }]
-            });
-            await user.deleteOne();
+            await Promise.all([
+                Post.deleteMany({ user: user._id }),
+                Comment.deleteMany({ user: user._id }),
+                Job.deleteMany({ user: user._id }),
+                Product.deleteMany({ user: user._id }),
+                Service.deleteMany({ user: user._id }),
+                Report.deleteMany({ user: user._id }),
+                Request.deleteMany({ $or: [{ from: user._id }, { to: user._id }] }),
+                Follow.deleteMany({ $or: [{ from: user._id }, { to: user._id }] }),
+                Message.deleteMany({ $or: [{ from: user._id }, { to: user._id }] }),
+                user.deleteOne()
+            ]);
+
             console.log(`User ${user._id} and related data deleted.`);
         } catch (err) {
             console.error(`Error deleting user ${user._id}:`, err);
@@ -68,24 +66,25 @@ module.exports = (agenda) => {
     };
 
     // Define the "clean database" task
-    agenda.define("clean database", async (job) => {
+    agenda.define("clean database", async () => {
         console.log('Cleaning database...');
-        
+
         try {
-            const posts = await Post.find({});
-            await Promise.all(posts.filter(p => !p.user).map(p => p.delete()));
+            const orphanedResources = [
+                { model: Post, name: 'posts' },
+                { model: Comment, name: 'comments' },
+                { model: Product, name: 'products' },
+                { model: Job, name: 'jobs' },
+                { model: Service, name: 'services' }
+            ];
 
-            const comments = await Comment.find({}).populate('user', '_id').select('user');
-            await Promise.all(comments.filter(c => !c.user).map(c => c.delete()));
+            for (const resource of orphanedResources) {
+                const docs = await resource.model.find({}).populate('user', '_id').select('user');
+                const deletedDocs = docs.filter(doc => !doc.user);
+                await Promise.all(deletedDocs.map(doc => doc.deleteOne()));
 
-            const products = await Product.find({}).populate('user', '_id').select('user');
-            await Promise.all(products.filter(p => !p.user).map(p => p.delete()));
-
-            const jobs = await Job.find({}).populate('user', '_id').select('user');
-            await Promise.all(jobs.filter(j => !j.user).map(j => j.delete()));
-
-            const services = await Service.find({}).populate('user', '_id').select('user');
-            await Promise.all(services.filter(s => !s.user).map(s => s.delete()));
+                console.log(`${deletedDocs.length} orphaned ${resource.name} cleaned.`);
+            }
 
             console.log('Database cleaned successfully.');
         } catch (err) {
@@ -96,8 +95,8 @@ module.exports = (agenda) => {
     // Start the agenda and schedule jobs
     (async () => {
         await agenda.start();
-        await agenda.every("one minute", "expired subscription");
-        await agenda.every("one minute", "delete users");
-        await agenda.every("one minute", "clean database");
+        await agenda.every("12 hours", "expired subscription");  // Adjusted frequency to 12 hours
+        await agenda.every("24 hours", "delete users");          // Adjusted to run daily
+        await agenda.every("24 hours", "clean database");        // Adjusted to run daily
     })();
 };

@@ -100,31 +100,45 @@ exports.updateVisibility = (req, res) => {
         });
 };
 
-exports.showPost = (req, res) => {
-    Post.findOne({
-        _id: req.post._id,
-        $or: [
-            { visibility: 'public' },
-            { visibility: 'private', user: req.auth._id },
-            { visibility: 'friends-only', user: { $in: req.authUser.friends } },
-            { user: req.auth._id }
-        ]
-    })
-    .populate({
-        path: 'comments',
-        populate: {
-            path: 'user',
-            select: 'firstName lastName'
+exports.showPost = async (req, res) => {
+    try {
+        const post = await Post.findOne({
+            _id: req.post._id,
+            $or: [
+                { visibility: 'public' },
+                { visibility: 'private', user: req.auth._id },
+                { visibility: 'friends-only', user: { $in: req.authUser.friends } },
+                { user: req.auth._id }
+            ]
+        })
+        .populate({
+            path: 'comments',
+            populate: {
+                path: 'user',
+                select: 'firstName lastName'
+            }
+        })
+        .populate('user', 'firstName lastName')
+        .exec();
+
+        // Handle if the post is not found
+        if (!post) {
+            return Response.sendError(res, 400, 'Post not found or unauthorized');
         }
-    })
-    .populate('user', 'firstName lastName')
-    .exec((err, post) => {
-        if (err || !post) return Response.sendError(res, 400, 'Server error');
-        post = withVotesInfo(post, req.auth._id, post._id);
-        console.log("showpost response", post);
-        return Response.sendResponse(res, post);
-    });
+
+        // Apply votes info
+        const postWithVotes = withVotesInfo(post, req.auth._id, post._id);
+
+        // Log and send response
+        console.log("showPost response", postWithVotes);
+        return Response.sendResponse(res, postWithVotes);
+
+    } catch (err) {
+        console.error('Error in showPost:', err);
+        return Response.sendError(res, 500, 'Server error');
+    }
 };
+
 
 
 
@@ -240,13 +254,13 @@ exports.storePost = async (req, res) => {
 
 
 
-exports.getPosts = (req, res) => {
+exports.getPosts = async (req, res) => {
     try {
         const { channelId } = req.params;
         const { page = 0 } = req.query;
         const limit = 10;
 
-        let visibilityQuery = {
+        const visibilityQuery = {
             channel: channelId,
             $or: [
                 { visibility: 'public' },
@@ -256,7 +270,8 @@ exports.getPosts = (req, res) => {
             ]
         };
 
-        Post.find(visibilityQuery)
+        // Fetch posts based on visibility query
+        const posts = await Post.find(visibilityQuery)
             .populate({
                 path: 'comments',
                 populate: {
@@ -268,26 +283,32 @@ exports.getPosts = (req, res) => {
             .sort({ createdAt: -1 })
             .skip(page * limit)
             .limit(limit)
-            .exec((err, posts) => {
-                if (err || !posts) return Response.sendError(res, 400, 'could not get the posts');
+            .exec();
 
-                posts = posts.map(post => withVotesInfo(post, req.auth._id, post._id));
-                console.log("getPosts hit, posts:", posts);
+        // If no posts are found or an error occurs
+        if (!posts) {
+            return Response.sendError(res, 400, 'Could not get the posts');
+        }
 
-                Post.countDocuments(visibilityQuery, (err, count) => {
-                    if (err) return Response.sendError(res, 400, 'could not count the posts');
+        // Apply votes information to each post
+        const postsWithVotes = posts.map(post => withVotesInfo(post, req.auth._id, post._id));
+        console.log("getPosts hit, posts:", postsWithVotes);
 
-                    return Response.sendResponse(res, {
-                        posts,
-                        more: (count - (limit * (parseInt(page) + 1))) > 0
-                    });
-                });
-            });
+        // Count total number of posts matching the query
+        const count = await Post.countDocuments(visibilityQuery).exec();
+
+        // Return posts with pagination info
+        return Response.sendResponse(res, {
+            posts: postsWithVotes,
+            more: (count - (limit * (parseInt(page) + 1))) > 0
+        });
+
     } catch (err) {
-        console.log(err);
-        Response.sendError(res, 500, 'Server error');
+        console.error('Error in getPosts:', err);
+        return Response.sendError(res, 500, 'Server error');
     }
 };
+
 
 
 

@@ -2,13 +2,21 @@ const Response = require('../controllers/Response')
 const { adminCheck } = require('../helpers')
 const Channel = require('./../models/Channel')
 
-exports.channelById = (req, res, next, id) => {
-    Channel.findOne({_id: id}, (err, channel) => {
-        if(err || !channel) return Response.sendError(res, 400, 'channel not found')
-        req.channel = channel
-        next()
-    })
-}
+exports.channelById = async (req, res, next, id) => {
+    try {
+        const channel = await Channel.findOne({ _id: id });
+
+        if (!channel) {
+            return Response.sendError(res, 400, 'Channel not found');
+        }
+
+        req.channel = channel;
+        next();
+    } catch (err) {
+        return Response.sendError(res, 500, 'Server error');
+    }
+};
+
 
 exports.channelOwner = (req, res, next) => {
     if(adminCheck(req)){

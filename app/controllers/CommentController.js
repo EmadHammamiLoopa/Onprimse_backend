@@ -23,63 +23,66 @@ const upload = multer({ storage: storage });
 
 
 
-exports.reportComment = (req, res) => {
+exports.reportComment = async (req, res) => {
     try {
-        const comment = req.comment
-        if(!req.body.message) return Response.sendError(res, 400, 'please enter a message')
-        report(req, res, 'comment', comment._id, (report) => {
-            Comment.updateOne({_id: comment._id}, {$push: {reports: report}}, (err, comment) => {
-                if(err) return Response.sendError(res, 400, 'failed')
-                return Response.sendResponse(res, null, 'Thank you for reporting')
-            })
-        })
+        const comment = req.comment;
+        if (!req.body.message) return Response.sendError(res, 400, 'Please enter a message');
+
+        const reportData = await report(req, res, 'comment', comment._id);
+        await Comment.updateOne({ _id: comment._id }, { $push: { reports: reportData } });
+
+        return Response.sendResponse(res, null, 'Thank you for reporting');
     } catch (error) {
         console.log(error);
+        return Response.sendError(res, 500, 'Server error');
     }
-}
+};
 
-exports.postComments = (req, res) => {
-    try{
+
+exports.postComments = async (req, res) => {
+    try {
         const post = req.post;
-        const dashParams = extractDashParams(req, ['text'])
-        Comment.aggregate()
-        .match({
-            post: post._id,
-            ...dashParams.filter
-        })
-        .project({
-            text: 1,
-            user: 1,
-            post: 1,
-            reports: {
-                $size: "$reports"
-            },
-        })
-        .sort(dashParams.sort)
-        .skip(dashParams.skip)
-        .limit(dashParams.limit)
-        .exec(async(err, comments) => {
-            if(err || !comments) return Response.sendError(res, 500, 'Server error, please try again later');
-            const count = await Comment.find({
-                post: post._id,
-                ...dashParams.filter
-            }).countDocuments();
-            return Response.sendResponse(res, {
-                docs: comments,
-                totalPages: Math.ceil(count / dashParams.limit)
-            });
-        });
-    }catch(err){
-        console.log(err);
-    }
-}
+        const dashParams = extractDashParams(req, ['text']);
+        
+        const comments = await Comment.aggregate()
+            .match({ post: post._id, ...dashParams.filter })
+            .project({
+                text: 1,
+                user: 1,
+                post: 1,
+                reports: { $size: "$reports" }
+            })
+            .sort(dashParams.sort)
+            .skip(dashParams.skip)
+            .limit(dashParams.limit)
+            .exec();
 
-exports.showComment = (req, res) => {
-    Comment.findOne({_id: req.comment._id}, (err, comment) => {
-        if(err || !comment) return Response.sendError(res, 400, 'Server error')
-        return Response.sendResponse(res, comment)
-    })
-}
+        if (!comments) return Response.sendError(res, 500, 'Server error, please try again later');
+
+        const count = await Comment.find({ post: post._id, ...dashParams.filter }).countDocuments();
+
+        return Response.sendResponse(res, {
+            docs: comments,
+            totalPages: Math.ceil(count / dashParams.limit)
+        });
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 500, 'Server error');
+    }
+};
+
+
+exports.showComment = async (req, res) => {
+    try {
+        const comment = await Comment.findOne({ _id: req.comment._id });
+        if (!comment) return Response.sendError(res, 400, 'Server error');
+        return Response.sendResponse(res, comment);
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 500, 'Server error');
+    }
+};
+
 
 exports.storeComment = async (req, res) => {
     try {
@@ -191,71 +194,85 @@ exports.storeComment = async (req, res) => {
 
 
 
-exports.voteOnComment = (req, res) => {
-    try{
-        const comment = req.comment
-
-        const userVoteInd =  comment.votes.findIndex(vote => vote.user == req.auth._id)
-        if(userVoteInd != -1){
-            if(comment.votes[userVoteInd].vote != req.body.vote)
-                comment.votes.splice(userVoteInd, 1)
-        }else{
-            comment.votes.push({
-                user: req.auth._id,
-                vote: req.body.vote
-            })
-        }
-        comment.populate('post', 'channel', 'Post').save(async(err, comment) => {
-            if(err || !comment) return Response.sendError(res, 400, 'failed')
-            comment = withVotesInfo(comment, req.auth._id, comment.post._id);
-            const post = await Post.findOne({_id: comment.post})
-            if(userVoteInd && comment.user != req.auth._id)
-                Channel.findOne({_id: post.channel}, (err, channel) => {
-                    sendNotification(
-                        {en: channel.name}, 
-                        {en: (comment.anonyme ? 'Anonym' : req.authUser.firstName + ' ' + req.authUser.lastName) + ' has voted on your post'},
-                        {
-                            type: 'vote-channel-post',
-                            link: '/tabs/channels/post' + post._id
-                        }, 
-                        [], 
-                        [comment.user]
-                    )
-                })
-            return Response.sendResponse(res, {
-                votes: comment.votes,
-                voted: userVoteInd != -1
-            }, 'voted')
-        })
-    }catch(err){
-        console.log(err);
-    }
-}
-
-exports.getComments = (req, res) => {
+exports.voteOnComment = async (req, res) => {
     try {
-        const limit = 8;
-        const post = req.post;
-        Comment.find({ post: post._id })
-            .populate('user', 'firstName lastName', 'User')
-            .sort({ createdAt: -1 })
-            .skip(req.query.page * limit)
-            .limit(limit)
-            .exec((err, comments) => {
-                if (err || !comments) return Response.sendError(res, 400, 'Failed to retrieve comments');
-                Comment.find({ post: post._id }).count((err, count) => {
-                    comments = comments.map(comment => withVotesInfo(comment, req.auth._id, comment.post._id));
-                    return Response.sendResponse(res, {
-                        comments,
-                        more: (count - (limit * (+req.query.page + 1))) > 0
-                    });
-                });
-            });
+        const comment = req.comment;
+        const userVoteInd = comment.votes.findIndex(vote => vote.user == req.auth._id);
+
+        if (userVoteInd != -1) {
+            if (comment.votes[userVoteInd].vote != req.body.vote) {
+                comment.votes.splice(userVoteInd, 1);
+            }
+        } else {
+            comment.votes.push({ user: req.auth._id, vote: req.body.vote });
+        }
+
+        await comment.populate('post', 'channel', 'Post').execPopulate();
+        await comment.save();
+
+        const post = await Post.findOne({ _id: comment.post });
+
+        if (userVoteInd && comment.user != req.auth._id) {
+            const channel = await Channel.findOne({ _id: post.channel });
+            sendNotification(
+                { en: channel.name },
+                { en: (comment.anonyme ? 'Anonym' : req.authUser.firstName + ' ' + req.authUser.lastName) + ' has voted on your post' },
+                { type: 'vote-channel-post', link: '/tabs/channels/post' + post._id },
+                [],
+                [comment.user]
+            );
+        }
+
+        comment = withVotesInfo(comment, req.auth._id, comment.post._id);
+        return Response.sendResponse(res, {
+            votes: comment.votes,
+            voted: userVoteInd != -1
+        }, 'voted');
     } catch (err) {
         console.log(err);
         return Response.sendError(res, 500, 'Server error');
     }
 };
+
+
+exports.getComments = async (req, res) => {
+    try {
+        const limit = 8;
+        const post = req.post;
+        const page = parseInt(req.query.page) || 0;
+
+        // Find comments for the post with pagination and population
+        const comments = await Comment.find({ post: post._id })
+            .populate('user', 'firstName lastName', 'User')
+            .sort({ createdAt: -1 })
+            .skip(page * limit)
+            .limit(limit)
+            .exec();
+
+        if (!comments) {
+            return Response.sendError(res, 400, 'Failed to retrieve comments');
+        }
+
+        // Count the total number of comments
+        const count = await Comment.countDocuments({ post: post._id }).exec();
+
+        // Map the comments with vote information
+        const commentsWithVotes = comments.map(comment =>
+            withVotesInfo(comment, req.auth._id, comment.post._id)
+        );
+
+        // Send the response with comments and more pages info
+        return Response.sendResponse(res, {
+            comments: commentsWithVotes,
+            more: (count - (limit * (page + 1))) > 0
+        });
+
+    } catch (err) {
+        console.error('Error in getComments:', err);
+        return Response.sendError(res, 500, 'Server error');
+    }
+};
+
 
 
 exports.deleteComment = (req, res) => {
@@ -267,10 +284,13 @@ exports.deleteComment = (req, res) => {
     }
 }
 
-exports.destroyComment = (res, commentId, callback) => {
-    Comment.remove({_id: commentId}, (err, comments) => {
-        Report.remove({'entity.id': commentId, "entity.name": 'comment'}, (err, reports) => {
-            if(callback) return callback(res)
-        })
-    })
-}
+exports.destroyComment = async (res, commentId, callback) => {
+    try {
+        await Comment.remove({ _id: commentId });
+        await Report.remove({ 'entity.id': commentId, 'entity.name': 'comment' });
+        if (callback) return callback(res);
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 500, 'Server error');
+    }
+};

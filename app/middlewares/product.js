@@ -57,23 +57,29 @@ exports.productOwner = (req, res, next) => {
 
 exports.productStorePermission = async(req, res, next) => {
     console.log('Product Store Permission middleware triggered');
-    if(await userSubscribed(req.authUser)){
-        console.log('User subscription check passed');
-        return next()
-    }
-    Product.find({user: req.auth._id}, {}, {sort: {'createdAt': -1}, limit: 1}, (err, product) => {
-        if(err) {
-            console.error('Product find error:', err);
-            return Response.sendError(res, 'an error has occured, please try again later');
+    try {
+        if (await userSubscribed(req.authUser)) {
+            console.log('User subscription check passed');
+            return next();
         }
-        
-        const currDate = new Date()
-        if(product[0] && currDate.getTime() - (new Date(product[0].createdAt)).getTime() < 24 * 60 * 60 * 1000) {
+
+        const products = await Product.find({ user: req.auth._id })
+            .sort({ 'createdAt': -1 })
+            .limit(1)
+            .exec();  // No callback needed, returns a promise
+
+        const currDate = new Date();
+        if (products.length > 0 && currDate.getTime() - (new Date(products[0].createdAt)).getTime() < 24 * 60 * 60 * 1000) {
             console.log('Product store permission check failed');
-            return Response.sendResponse(res, {date: product[0].createdAt})
+            return Response.sendResponse(res, { date: products[0].createdAt });
         } else {
             console.log('Product store permission check passed');
-            next()
+            next();
         }
-    })
-}
+    } catch (err) {
+        console.error('Product find error:', err);
+        return Response.sendError(res, 'An error has occurred, please try again later');
+    }
+};
+
+

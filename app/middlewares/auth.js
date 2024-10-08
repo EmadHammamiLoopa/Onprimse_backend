@@ -1,25 +1,33 @@
-const jwt = require('jsonwebtoken');
 const expressJWT = require('express-jwt');
 const Response = require('../controllers/Response');
 const { adminCheck } = require('../helpers');
 const User = require('../models/User');
 require('dotenv').config();
 
-exports.requireSignin = expressJWT({
-    secret: process.env.JWT_SECRET,
-    algorithms: ['HS256'],
-    userProperty: 'auth',
-    credentialsRequired: true,
-    getToken: (req) => {
-        console.log('Headers:', req.headers); // <-- Add this log to check headers
-        if (req.headers.authorization && req.headers.authorization.split(' ')[0] === 'Bearer') {
-            const token = req.headers.authorization.split(' ')[1];
-            console.log('Token found in Authorization header:', token); // <-- Add this log to ensure token is found
-            return token;
+exports.requireSignin = (req, res, next) => {
+    expressJWT({
+        secret: process.env.JWT_SECRET,
+        algorithms: ['HS256'],
+        userProperty: 'auth',
+        credentialsRequired: true,
+        getToken: (req) => {
+            console.log('requireSignin middleware called');
+            console.log('Authorization Header:', req.headers.authorization); // Log authorization header
+            
+            if (req.headers.authorization && req.headers.authorization.split(' ')[0] === 'Bearer') {
+                return req.headers.authorization.split(' ')[1]; // Extract token
+            }
+            return null;
         }
-        return null;
-    }
-});
+    })(req, res, (err) => {
+        if (err) {
+            console.log('JWT error:', err);
+            return Response.sendError(res, 401, 'Unauthorized: Invalid token');
+        }
+        console.log('Decoded token:', req.auth); // Check if the token is attached to req.auth
+        next();
+    });
+};
 
 
 
@@ -50,44 +58,30 @@ exports.isSuperAdmin = (req, res, next) => {
 };
 
 exports.withAuthUser = async (req, res, next) => {
-    console.log('withAuthUser middleware: Request headers:', req.headers);
-
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return Response.sendError(res, 401, 'Unauthorized: No token provided');
-    }
-
-    const token = authHeader.split(' ')[1];
-    console.log('Token from Authorization header:', token);  // Log the token extracted
-
     try {
-        // Verify the token and extract the user ID
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.auth = decoded;
+        console.log('withAuthUser middleware: Request headers:', req.headers);
+        const userId = req.auth && req.auth._id;
 
-        // Ensure _id exists in the decoded token
-        if (!req.auth._id) {
-            console.error('Token does not contain _id:', decoded);
-            return Response.sendError(res, 400, 'Invalid token structure');
+        if (!userId) {
+            return Response.sendError(res, 401, 'Unauthorized: No user ID found in token');
         }
 
-        console.log('Decoded JWT:', decoded);  // Log the decoded token for further debugging
+        console.log('withAuthUser: User ID from token:', userId); // Log the user ID from the token
 
-        // Fetch the user from the database using async/await
-        const user = await User.findById(req.auth._id);
+        // Fetch user by ID
+        const user = await User.findById(userId);
+
         if (!user) {
             console.log('withAuthUser error: User not found');
-            return Response.sendError(res, 401, 'You are not signed in');
+            return Response.sendError(res, 404, 'User not found');
         }
 
-        // Attach the authenticated user to req.authUser
-        req.authUser = user;
-        console.log('Authenticated user:', user);  // Log the user found by the token's ID
+        req.authUser = user; // Attach the found user to req.authUser
+        console.log('withAuthUser: Authenticated user:', user); // Log the found user
         next();
     } catch (err) {
-        console.error('Token verification failed:', err);  // Log any error during token verification
-        return Response.sendError(res, 401, 'Unauthorized: Invalid token');
+        console.log('withAuthUser error:', err);
+        return Response.sendError(res, 404, 'User not found');
     }
 };
 

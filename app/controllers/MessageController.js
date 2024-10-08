@@ -7,6 +7,8 @@ const User = require('../models/User');
 const Response = require('./Response');
 
 exports.indexMessages = async (req, res) => {
+    console.log("hereeeeeeeeeeeeeeeeeeeee");
+
     const limit = 20;
     const page = +req.query.page || 0;
     const authUserId = new mongoose.Types.ObjectId(req.auth._id);
@@ -25,12 +27,11 @@ exports.indexMessages = async (req, res) => {
         const messages = await Message.find(filter)
             .sort({ createdAt: 1 })
             .skip(limit * page)
-            .limit(limit)
-            .exec();
+            .limit(limit);
 
         console.log('Messages found:', messages); // Log the messages
 
-        const count = await Message.countDocuments(filter).exec();
+        const count = await Message.countDocuments(filter);
         const allowToChat = req.user.friends.includes(req.auth._id) ||
             await Message.find({ from: userId, to: authUserId }).countDocuments() > 0;
 
@@ -44,6 +45,7 @@ exports.indexMessages = async (req, res) => {
         return Response.sendError(res, 400, 'Failed to fetch messages');
     }
 };
+
 
 exports.getUsersMessages = async (req, res) => {
     const limit = 20;
@@ -102,8 +104,7 @@ exports.getUsersMessages = async (req, res) => {
                 },
             })
             .skip(limit * page)
-            .limit(limit)
-            .exec();
+            .limit(limit);
 
         console.log('Users found:', users.length); // Log the number of users found
         users.forEach(user => {
@@ -114,7 +115,7 @@ exports.getUsersMessages = async (req, res) => {
             return Response.sendError(res, 400, 'No users found');
         }
 
-        const count = await User.countDocuments(filter).exec();
+        const count = await User.countDocuments(filter);
 
         const usersWithStatus = setOnlineUsers(users);
         return Response.sendResponse(res, {
@@ -156,7 +157,8 @@ exports.deleteMessage = async (req, res) => {
     }
 };
 
-exports.sendMessagePermission = (req, res) => {
+
+exports.sendMessagePermission = async (req, res) => {
     try {
         const now = new Date();
         const yesterday = new Date();
@@ -164,9 +166,11 @@ exports.sendMessagePermission = (req, res) => {
         const user = req.user;
         const authUser = req.authUser;
 
-        if (authUser.friends && authUser.friends.includes(user._id)) return Response.sendResponse(res, true);
+        if (authUser.friends && authUser.friends.includes(user._id)) {
+            return Response.sendResponse(res, true);
+        }
 
-        Message.find({
+        const messages = await Message.find({
             from: req.auth._id,
             createdAt: {
                 $lt: now.toISOString(),
@@ -175,15 +179,18 @@ exports.sendMessagePermission = (req, res) => {
             to: {
                 $nin: req.authUser.friends
             }
-        })
-        .distinct('to')
-        .exec(async (err, messages) => {
-            console.log(messages);
-            if (!await userSubscribed(req.authUser) && messages.length > 3)
-                return Response.sendResponse(res, false);
-            else return Response.sendResponse(res, true);
-        });
+        }).distinct('to');
+
+        console.log(messages);
+
+        if (!await userSubscribed(req.authUser) && messages.length > 3) {
+            return Response.sendResponse(res, false);
+        } else {
+            return Response.sendResponse(res, true);
+        }
     } catch (error) {
         console.log(error);
+        return Response.sendError(res, 500, 'Server error');
     }
 };
+

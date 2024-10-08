@@ -5,12 +5,18 @@ const _ = require('lodash')
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 
 
-exports.getSubscription = (req, res) => {
-    Subscription.findOne({}, (err, subscription) => {
-        if(err || !subscription) return Response.sendError(res, 400, 'Server error')
-        return Response.sendResponse(res, subscription)
-    })
-}
+exports.getSubscription = async (req, res) => {
+    try {
+        const subscription = await Subscription.findOne({});
+        if (!subscription) {
+            return Response.sendError(res, 400, 'Subscription not found');
+        }
+        return Response.sendResponse(res, subscription);
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 500, 'Server error');
+    }
+};
 
 exports.showSubscription = (req, res) => {
     return Response.sendResponse(res, req.subscription)
@@ -85,6 +91,7 @@ exports.destroySubscription = (req, res) => {
 }
 
 exports.clientSecret = async(req, res) => {
+    console.log("Ssssssssssss")
     const subscription = req.subscription
     const duration = req.body.duration
     const { amount } = subExpireDateAndAmount(subscription, duration)

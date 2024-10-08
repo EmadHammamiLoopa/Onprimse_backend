@@ -1,228 +1,246 @@
-const Response = require('./Response')
-const fs = require('fs')
-const _ = require('lodash')
-const path = require('path')
-const Service = require('../models/Service')
-const mongoose = require('mongoose')
-const { extractDashParams, report } = require('../helpers')
-const Report = require('../models/Report')
+const Response = require('./Response');
+const fs = require('fs');
+const _ = require('lodash');
+const path = require('path');
+const Service = require('../models/Service');
+const mongoose = require('mongoose');
+const { extractDashParams, report } = require('../helpers');
+const Report = require('../models/Report');
 
-exports.reportService = (req, res) => {
+exports.reportService = async (req, res) => {
     try {
-        const service = req.service
-        if(!req.body.message) return Response.sendError(res, 400, 'please enter a message')
-        report(req, res, 'service', service._id, (report) => {
-            Service.updateOne({_id: service._id}, {$push: {reports: report}}, (err, service) => {
-                if(err) return Response.sendError(res, 400, 'failed')
-                return Response.sendResponse(res, null, 'Thank you for reporting')
-            })
-        })
+        const service = req.service;
+        if (!req.body.message) return Response.sendError(res, 400, 'Please enter a message');
+        
+        const newReport = await report(req, res, 'service', service._id);
+        await Service.updateOne({ _id: service._id }, { $push: { reports: newReport } });
+        return Response.sendResponse(res, null, 'Thank you for reporting');
     } catch (error) {
         console.log(error);
+        return Response.sendError(res, 500, 'Failed to report service');
     }
-}
+};
 
-exports.clearServiceReports = (req, res) => {
-    Report.remove({
-        "entity._id": req.service._id,
-        "entity.name": "service"
-    }, (err, rmRes) => {
-        if(err) return Response.sendError(res, 400, 'failed to clear reports')
-        return Response.sendResponse(res, null, "reports cleaned")
-    })
-}
+exports.clearServiceReports = async (req, res) => {
+    try {
+        await Report.deleteMany({
+            "entity._id": req.service._id,
+            "entity.name": "service"
+        });
+        return Response.sendResponse(res, null, "Reports cleaned");
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 400, 'Failed to clear reports');
+    }
+};
 
-exports.toggleServiceStatus = (req, res) => {
-    const service = req.service
-    service.deletedAt = service.deletedAt ? null : new Date().toJSON()
-    service.save((err, service) => {
-        if(err) return Response.sendError(res, 400, 'failed')
-        return Response.sendResponse(res, service, 'service ' + (service.deletedAt ? 'disabled' : 'enabled'))
-    })
-}
+exports.toggleServiceStatus = async (req, res) => {
+    try {
+        const service = req.service;
+        service.deletedAt = service.deletedAt ? null : new Date().toISOString();
+        await service.save();
+        return Response.sendResponse(res, service, 'Service ' + (service.deletedAt ? 'disabled' : 'enabled'));
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 400, 'Failed to update service status');
+    }
+};
 
-exports.showServiceDash = (req, res) => {
-    Service.findOne({_id: req.service._id}, {
-        title: 1,
-        description: 1,
-        company: 1,
-        country: 1,
-        city: 1,
-        phone: 1,
-        photo: "$photo.path",
-        user: 1,
-        deletedAt: 1
-    })
-    .populate('reports')
-    .exec((err, service) => {
-        if(err || !service) return Response.sendError(res, 500, 'Server error, please try again later');
-        return Response.sendResponse(res, service)
-    })
-}
-
-exports.allServices = (req, res) => {
-    try{
-        dashParams = extractDashParams(req, ['title', 'description', 'company', 'location']);
-        Service.aggregate()
-        .match(dashParams.filter)
-        .project({
+exports.showServiceDash = async (req, res) => {
+    try {
+        const service = await Service.findOne({ _id: req.service._id }, {
             title: 1,
             description: 1,
             company: 1,
-            photo: "$photo.path",
             country: 1,
             city: 1,
-            deletedAt: 1,
-            reports: {
-                $size: "$reports"
-            }
-        })
-        .sort(dashParams.sort)
-        .skip(dashParams.skip)
-        .limit(dashParams.limit)
-        .exec(async(err, services) => {
-            if(err || !services) return Response.sendError(res, 500, 'Server error, please try again later');
-            const count = await Service.find(dashParams.filter).countDocuments();
-            return Response.sendResponse(res, {
-                docs: services,
-                totalPages: Math.ceil(count / dashParams.limit)
-            });
-        });
-    }catch(err){
-        console.log(err);
+            phone: 1,
+            photo: "$photo.path",
+            user: 1,
+            deletedAt: 1
+        }).populate('reports');
+        if (!service) return Response.sendError(res, 500, 'Service not found');
+        return Response.sendResponse(res, service);
+    } catch (error) {
+        console.log(error);
+        return Response.sendError(res, 500, 'Server error, please try again later');
     }
-}
+};
+
+exports.allServices = async (req, res) => {
+    try {
+        const dashParams = extractDashParams(req, ['title', 'description', 'company', 'location']);
+        const services = await Service.aggregate()
+            .match(dashParams.filter)
+            .project({
+                title: 1,
+                description: 1,
+                company: 1,
+                photo: "$photo.path",
+                country: 1,
+                city: 1,
+                deletedAt: 1,
+                reports: { $size: "$reports" }
+            })
+            .sort(dashParams.sort)
+            .skip(dashParams.skip)
+            .limit(dashParams.limit);
+
+        const count = await Service.countDocuments(dashParams.filter);
+        return Response.sendResponse(res, {
+            docs: services,
+            totalPages: Math.ceil(count / dashParams.limit)
+        });
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 500, 'Server error, please try again later');
+    }
+};
 
 exports.showService = (req, res) => {
-    return Response.sendResponse(res, req.service)
-}
+    return Response.sendResponse(res, req.service);
+};
 
-exports.postedServices = (req, res) => {
-    try{
+exports.postedServices = async (req, res) => {
+    try {
         const filter = {
             user: new mongoose.Types.ObjectId(req.auth._id),
             title: new RegExp('^' + req.query.search, 'i'),
-            deletedAt: null,
-        }
-        limit = 20
-        Service.find(filter , {
+            deletedAt: null
+        };
+        const limit = 20;
+        const page = parseInt(req.query.page) || 0;
+
+        const services = await Service.find(filter, {
             title: 1,
             photo: "$photo.path",
             company: 1,
             country: 1,
             city: 1,
             createdAt: 1
-        })
-        .sort({createdAt: -1})
-        .skip(limit * req.query.page)
-        .limit(limit)
-        .exec((err, services) => {
-            if(err || !services) return Response.sendError(res, 400, 'cannot retreive services')
-            Service.find(filter).countDocuments((err, count) => {
-                return Response.sendResponse(res, {
-                    services,
-                    more: (count - (limit * (+req.query.page + 1))) > 0
-                })
-            })
-        })
-    }catch(err){
-        console.log(err);
-    }
-}
+        }).sort({ createdAt: -1 }).skip(limit * page).limit(limit);
 
-exports.availableServices = (req, res) => {
-    try{
+        const count = await Service.countDocuments(filter);
+        return Response.sendResponse(res, {
+            services,
+            more: (count - (limit * (page + 1))) > 0
+        });
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 400, 'Failed to retrieve services');
+    }
+};
+
+exports.availableServices = async (req, res) => {
+    try {
         const filter = {
             title: new RegExp('^' + req.query.search, 'i'),
             deletedAt: null,
             city: req.authUser.city,
             country: req.authUser.country
-        }
-        limit = 20
-        Service.find(filter , {
+        };
+        const limit = 20;
+        const page = parseInt(req.query.page) || 0;
+
+        const services = await Service.find(filter, {
             title: 1,
             photo: "$photo.path",
             company: 1,
             country: 1,
             city: 1,
             createdAt: 1
-        })
-        .sort({createdAt: -1})
-        .skip(limit * req.query.page)
-        .limit(limit)
-        .exec((err, services) => {
-            if(err || !services) return Response.sendError(res, 400, 'cannot retreive services')
-            Service.find(filter).countDocuments((err, count) => {
-                return Response.sendResponse(res, {
-                    services,
-                    more: (count - (limit * (+req.query.page + 1))) > 0
-                })
-            })
-        })
-    }catch(err){
+        }).sort({ createdAt: -1 }).skip(limit * page).limit(limit);
+
+        const count = await Service.countDocuments(filter);
+
+        // Return an empty array if no services found instead of throwing an error
+        return Response.sendResponse(res, {
+            services: services || [],
+            more: (count - (limit * (page + 1))) > 0
+        });
+    } catch (err) {
         console.log(err);
+        return Response.sendError(res, 400, 'Failed to retrieve services');
     }
-}
+};
 
-exports.storeService = (req, res) => {
-    service = new Service(req.fields)
-    service.user = req.auth._id
+exports.storeService = async (req, res) => {
+    try {
+        const service = new Service(req.fields);
+        service.user = req.auth._id;
 
-    if(req.files.photo)
-        storeServicePhoto(req.files.photo, service)
-    else
-        return Response.sendError(res, 400, 'photo is required')
+        if (req.files.photo) {
+            storeServicePhoto(req.files.photo, service);
+        } else {
+            return Response.sendError(res, 400, 'Photo is required');
+        }
 
-    service.save((err, service) => {
-        if(err) return Response.sendError(res, 400, err);
-        service.photo.path = process.env.BASEURL + service.photo.path
-        return Response.sendResponse(res, service, 'the service has been created successfully')
-    })
+        await service.save();
+        service.photo.path = process.env.BASEURL + service.photo.path;
+        return Response.sendResponse(res, service, 'The service has been created successfully');
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 400, 'Failed to create service');
+    }
+};
 
-}
+const storeServicePhoto = (photo, service) => {
+    try {
+        const fileExt = path.extname(photo.name);
+        const photoName = `${service._id}${fileExt}`;
+        const photoPath = path.join(__dirname, `../../public/services/${photoName}`);
 
-storeServicePhoto = (photo, service) => {
-    photoName = `${ service._id }.${ fileExtension(photo.name) }`
-    const photoPath = path.join(__dirname, `./../../public/services/${ photoName }`)
-    
-    fs.writeFileSync(photoPath, fs.readFileSync(photo.path))
-    service.photo.path = `/services/${ photoName }`
-    service.photo.type = photo.type
-}
+        fs.writeFileSync(photoPath, fs.readFileSync(photo.path));
+        service.photo.path = `/services/${photoName}`;
+        service.photo.type = photo.type;
+    } catch (err) {
+        console.log("Error storing service photo:", err);
+    }
+};
 
-exports.updateService = (req, res) => {
 
-    let service = req.service
-    const fields = _.omit(req.fields, ['photo'])
-    service = _.extend(service, fields)
+exports.updateService = async (req, res) => {
+    try {
+        let service = req.service;
+        const fields = _.omit(req.fields, ['photo']);
+        service = _.extend(service, fields);
 
-    if(req.files.photo)
-        storeServicePhoto(req.files.photo, service)
-    
-    service.save((err, service) => {
-        if(err) return Response.sendError(res, 400, 'could not update service')
-        return Response.sendResponse(res, service, 'the service has been updated successfully')
-    })
-}
+        if (req.files.photo) {
+            storeServicePhoto(req.files.photo, service);
+        }
 
-exports.deleteService = (req, res) => {
-    const service = req.service
-    service.deletedAt = new Date().toJSON();
-    service.save((err, service) => {
-        if(err) Response.sendError(res, 400, 'could not remove service');
-        return Response.sendResponse(res, null, 'service removed')
-    })
-}
+        await service.save();
+        return Response.sendResponse(res, service, 'The service has been updated successfully');
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 400, 'Failed to update service');
+    }
+};
 
-exports.destroyService = (req, res) => {
-    Service.findOne({_id: req.service._id}, (err, service) => {
-        const photoPath = path.join(__dirname, `./../../public/${ service.photo.path }`)
-        service.remove((err, service) => {
-            if(err) return Response.sendError(res, 400, 'could not remove service');
-            if(fs.existsSync(photoPath)){
-                fs.unlinkSync(photoPath);
-            }
-            return Response.sendResponse(res, null, 'service removed')
-        })
-    });
-}
+exports.deleteService = async (req, res) => {
+    try {
+        const service = req.service;
+        service.deletedAt = new Date().toISOString();
+        await service.save();
+        return Response.sendResponse(res, null, 'Service removed');
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 400, 'Failed to remove service');
+    }
+};
+
+exports.destroyService = async (req, res) => {
+    try {
+        const service = req.service;
+        const photoPath = path.join(__dirname, `./../../public/${service.photo.path}`);
+
+        await service.remove();
+        if (fs.existsSync(photoPath)) {
+            fs.unlinkSync(photoPath);
+        }
+        return Response.sendResponse(res, null, 'Service removed');
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 400, 'Failed to remove service');
+    }
+};

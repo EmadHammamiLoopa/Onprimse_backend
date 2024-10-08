@@ -33,30 +33,30 @@ exports.serviceOwner = (req, res, next) => {
 
     next();
 }
-exports.serviceStorePermission = async(req, res, next) => {
+exports.serviceStorePermission = async (req, res, next) => {
     try {
-        if(await userSubscribed(req.authUser)){
-            return next()
+        // Check if the user is subscribed
+        if (await userSubscribed(req.authUser)) {
+            return next();
         }
-        Service.find(
-            {user: req.auth._id},
-            {}, 
-            {sort: {'createdAt': -1}, limit: 1}, 
-            (err, service) => {
-                if(err) return Response.sendError(res, 400, 'an error has occured, please try again later')
-                const currDate = new Date()
-                /*
-                * check if the difference between the current date and the date when the last product 
-                was created is less than 24 hours
-                */
-                if(service[0] && currDate.getTime() - (new Date(service[0].createdAt)).getTime() < 24 * 60 * 60 * 1000){
-                    return Response.sendResponse(res, {date: service[0].createdAt})
-                }else{
-                    next()
-                }
-            }
-        )
+
+        // Use async/await for Service.find()
+        const services = await Service.find(
+            { user: req.auth._id },
+            {},
+            { sort: { createdAt: -1 }, limit: 1 }
+        );
+
+        const currDate = new Date();
+
+        // Check if the last service was created less than 24 hours ago
+        if (services[0] && currDate.getTime() - new Date(services[0].createdAt).getTime() < 24 * 60 * 60 * 1000) {
+            return Response.sendResponse(res, { date: services[0].createdAt });
+        } else {
+            next();
+        }
     } catch (error) {
         console.log(error);
+        return Response.sendError(res, 400, 'An error has occurred, please try again later');
     }
-}
+};

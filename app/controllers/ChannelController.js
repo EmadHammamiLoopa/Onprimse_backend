@@ -10,110 +10,117 @@ const Post = require("../models/Post");
 const { destroyPost } = require("./PostController")
 const User = require("../models/User")
 
-exports.reportChannel = (req, res) => {
+exports.reportChannel = async (req, res) => {
     try {
-        const channel = req.channel
-        if(!req.body.message) return Response.sendError(res, 400, 'please enter a message')
-        report(req, res, 'channel', channel._id, (report) => {
-            Channel.updateOne({_id: channel._id}, {$push: {reports: report}}, (err, channel) => {
-                if(err) return Response.sendError(res, 400, 'failed')
-                return Response.sendResponse(res, null, 'Thank you for reporting')
-            })
-        })
+        const channel = req.channel;
+        if (!req.body.message) return Response.sendError(res, 400, 'please enter a message');
+
+        const reportData = await report(req, res, 'channel', channel._id);
+        await Channel.updateOne({ _id: channel._id }, { $push: { reports: reportData } });
+
+        return Response.sendResponse(res, null, 'Thank you for reporting');
     } catch (error) {
         console.log(error);
+        return Response.sendError(res, 500, 'Server error');
     }
-}
+};
 
-exports.clearChannelReports = (req, res) => {
-    Report.remove({
-        "entity._id": req.channel._id,
-        "entity.name": "channel"
-    }, (err, rmRes) => {
-        if(err) return Response.sendError(res, 400, 'failed to clear reports')
-        return Response.sendResponse(res, null, "reports cleaned")
-    })
-}
 
-exports.toggleChannelStatus = (req, res) => {
+exports.clearChannelReports = async (req, res) => {
     try {
-        const channel = req.channel
-        channel.enabled = !channel.enabled
-        channel.save((err, channel) => {
-            console.log(err);
-            if(err) return Response.sendError(res, 400, 'failed')
-            return Response.sendResponse(res, channel)
-        })
+        await Report.deleteMany({
+            "entity._id": req.channel._id,
+            "entity.name": "channel"
+        });
+
+        return Response.sendResponse(res, null, "reports cleaned");
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 400, 'Failed to clear reports');
+    }
+};
+
+
+exports.toggleChannelStatus = async (req, res) => {
+    try {
+        const channel = req.channel;
+        channel.enabled = !channel.enabled;
+        await channel.save();
+
+        return Response.sendResponse(res, channel);
     } catch (error) {
         console.log(error);
+        return Response.sendError(res, 500, 'Failed to update channel status');
     }
-}
+};
 
-exports.toggleChannelApprovement = (req, res) => {
+
+exports.toggleChannelApprovement = async (req, res) => {
     try {
-        const channel = req.channel
-        channel.approved = !channel.approved
-        channel.save((err, channel) => {
-            console.log(err);
-            if(err) return Response.sendError(res, 400, 'failed')
-            return Response.sendResponse(res, channel)
-        })
+        const channel = req.channel;
+        channel.approved = !channel.approved;
+        await channel.save();
+
+        return Response.sendResponse(res, channel);
     } catch (error) {
         console.log(error);
+        return Response.sendError(res, 500, 'Failed to update channel approval');
     }
-}
+};
 
-exports.showChannel = (req, res) => {
-    Channel.findOne({_id: req.channel._id}, {
-        name: 1,
-        description: 1,
-        country: 1,
-        city: 1,
-        user: 1,
-        approved: 1,
-        photo: "$photo.path",
-        enabled: 1,
-        reports: 1
-    })
-    .populate('reports')
-    .exec((err, channel) => {
-        return Response.sendResponse(res, channel)
-    })
-}
-
-exports.allChannels = (req, res) => {
-    try{
-        dashParams = extractDashParams(req, ['name', 'description', 'country', 'city']);
-        Channel.aggregate()
-        .match(dashParams.filter)
-        .project({
+exports.showChannel = async (req, res) => {
+    try {
+        const channel = await Channel.findOne({ _id: req.channel._id }, {
             name: 1,
             description: 1,
-            approved: 1,
-            city: 1,
             country: 1,
+            city: 1,
+            user: 1,
+            approved: 1,
             photo: "$photo.path",
             enabled: 1,
-            reports: {
-                $size: "$reports"
-            }
-        })
-        .sort(dashParams.sort)
-        .skip(dashParams.skip)
-        .limit(dashParams.limit)
-        .exec(async(err, channels) => {
-            console.log(err);
-            if(err || !channels) return Response.sendError(res, 500, 'Server error, please try again later');
-            const count = await Channel.find(dashParams.filter).countDocuments();
-            return Response.sendResponse(res, {
-                docs: channels,
-                totalPages: Math.ceil(count / dashParams.limit)
-            });
-        });
-    }catch(err){
+            reports: 1
+        }).populate('reports');
+
+        return Response.sendResponse(res, channel);
+    } catch (err) {
         console.log(err);
+        return Response.sendError(res, 500, 'Failed to retrieve channel');
     }
-}
+};
+
+
+exports.allChannels = async (req, res) => {
+    try {
+        const dashParams = extractDashParams(req, ['name', 'description', 'country', 'city']);
+
+        const channels = await Channel.aggregate()
+            .match(dashParams.filter)
+            .project({
+                name: 1,
+                description: 1,
+                approved: 1,
+                city: 1,
+                country: 1,
+                photo: "$photo.path",
+                enabled: 1,
+                reports: { $size: "$reports" }
+            })
+            .sort(dashParams.sort)
+            .skip(dashParams.skip)
+            .limit(dashParams.limit);
+
+        const count = await Channel.find(dashParams.filter).countDocuments();
+
+        return Response.sendResponse(res, {
+            docs: channels,
+            totalPages: Math.ceil(count / dashParams.limit)
+        });
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 500, 'Server error, please try again later');
+    }
+};
 
 
 exports.exploreChannels = async (req, res) => {
@@ -556,15 +563,16 @@ const unfollowOldCityStaticChannels = async (req, user) => {
 
 
 
-exports.myChannels = (req, res) => {
-    try{
+exports.myChannels = async (req, res) => {
+    try {
         const filter = {
             user: new mongoose.Types.ObjectId(req.auth._id),
             name: new RegExp('^' + req.query.search, 'i'),
             enabled: true
-        }
-        limit = 20
-        Channel.find(filter , {
+        };
+        const limit = 20;
+
+        const channels = await Channel.find(filter, {
             name: 1,
             description: 1,
             photo: "$photo.path",
@@ -572,47 +580,56 @@ exports.myChannels = (req, res) => {
             followers: 1,
             approved: 1
         })
-        .skip(limit * req.query.page)
-        .limit(limit)
-        .exec((err, channels) => {
-            console.log(channels)
-            if(err || !channels) return Response.sendError(res, 400, 'cannot retreive channels')
-            Channel.find(filter).countDocuments((err, count) => {
-                return Response.sendResponse(res, {
-                    channels,
-                    more: (count - (limit * (+req.query.page + 1))) > 0
-                })
-            })
-        })
-    }catch(err){
+            .skip(limit * req.query.page)
+            .limit(limit);
+
+        const count = await Channel.find(filter).countDocuments();
+
+        return Response.sendResponse(res, {
+            channels,
+            more: (count - (limit * (+req.query.page + 1))) > 0
+        });
+    } catch (err) {
         console.log(err);
+        return Response.sendError(res, 500, 'Server error');
     }
-}
-
-exports.storeChannel = (req, res) => {
-    let channel = new Channel(req.fields);
-    channel.user = req.auth._id;
-
-    // Automatically add the creator as a follower
-    channel.followers.push(req.auth._id);
-
-    // Set country and city from authUser if not provided
-    if (!channel.country || !channel.city) {
-        channel.country = req.authUser.country;
-        channel.city = req.authUser.city;
-    }
-
-    // Handle storing the channel photo
-    storeChannelPhoto(req, channel);
-
-    // Save the channel
-    channel.save((err, channel) => {
-        if (err) return Response.sendError(res, 400, err);
-
-        // No need to follow global channels by default, only the creator follows
-        return Response.sendResponse(res, channel, 'The channel has been created successfully');
-    });
 };
+
+
+exports.storeChannel = async (req, res) => {
+    try {
+        let channel = new Channel(req.fields);
+        channel.user = req.auth._id;
+
+        // Automatically add the creator as a follower
+        channel.followers.push(req.auth._id);
+
+        // Set country and city from authUser if not provided
+        if (!channel.country || !channel.city) {
+            channel.country = req.authUser.country;
+            channel.city = req.authUser.city;
+        }
+
+        // Handle storing the channel photo
+        if (req.files.photo) {
+            storeChannelPhoto(req, channel);
+        } else {
+            return Response.sendError(res, 400, 'Photo is required');
+        }
+
+        // Save the channel
+        await channel.save();
+
+        // Update the photo path with the base URL
+        channel.photo.path = process.env.BASEURL + channel.photo.path;
+
+        return Response.sendResponse(res, channel, 'The channel has been created successfully');
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 500, 'Server error');
+    }
+};
+
 
 
 storeChannelPhoto = (req, channel) => {
@@ -717,14 +734,18 @@ exports.followChannel = async (req, res) => {
     });
 };
 
-exports.destroyChannel = async(res, channelId, callback) => {
-    Channel.remove({_id: channelId}, (err, channels) => {
-        Report.remove({"entity.id": channelId, "entity.name": 'channel'}, (err, reports) => {
-            Post.find({channel: channelId}, (err, posts) => {
-                console.log(posts);
-                posts.forEach(post => destroyPost(res, post._id, null))
-                if(callback) return callback(res)
-            })
-        })
-    })
-}
+exports.destroyChannel = async (res, channelId, callback) => {
+    try {
+        await Channel.deleteMany({ _id: channelId });
+        await Report.deleteMany({ "entity.id": channelId, "entity.name": 'channel' });
+
+        const posts = await Post.find({ channel: channelId });
+        posts.forEach(post => destroyPost(res, post._id, null));
+
+        if (callback) return callback(res);
+    } catch (err) {
+        console.log(err);
+        return Response.sendError(res, 500, 'Failed to delete channel');
+    }
+};
+

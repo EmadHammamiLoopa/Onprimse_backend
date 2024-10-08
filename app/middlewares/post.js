@@ -2,15 +2,23 @@ const Response = require('../controllers/Response')
 const { adminCheck } = require('../helpers')
 const Post = require('../models/Post')
 
-exports.postById = (req, res, next, id) => {
-    Post.findOne({_id: id})
-    .populate('channel')
-    .exec((err, post) => {
-        if(err || !post) return Response.sendError(res, 400, 'post not found')
-        req.post = post
-        next()
-    })
-}
+exports.postById = async (req, res, next, id) => {
+    try {
+        const post = await Post.findOne({ _id: id })
+            .populate('channel')
+            .exec();
+
+        if (!post) {
+            return Response.sendError(res, 400, 'Post not found');
+        }
+
+        req.post = post;
+        next();
+    } catch (err) {
+        return Response.sendError(res, 500, 'Server error');
+    }
+};
+
 
 exports.postOwner = (req, res, next) => {
     if(adminCheck(req)){

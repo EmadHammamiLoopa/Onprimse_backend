@@ -8,7 +8,7 @@ const router = express.Router()
 
 router.get('/permission/:userId', [requireSignin, withAuthUser], sendMessagePermission);
 router.get('/users', [requireSignin, withAuthUser], getUsersMessages);
-router.get('/:userId', [requireSignin, withAuthUser, isFriend], indexMessages);
+router.get('/:userId', [requireSignin, withAuthUser], indexMessages);
 
 router.delete('/:messageId', [requireSignin, withAuthUser], deleteMessage);
 

@@ -651,18 +651,31 @@ exports.getUsers = async (req, res) => {
 
 // Helper function to build the base filter
 function buildBaseFilter(req) {
+    // Ensure that req.auth._id and req.authUser._id are properly converted to ObjectId
+    const authUserId = new mongoose.Types.ObjectId(req.auth._id);
+    const authUserBlockedIds = req.authUser.blockedUsers.map(id => new mongoose.Types.ObjectId(id));
+    
     const filter = {
-        _id: { $ne: new mongoose.Types.ObjectId(req.auth._id), $nin: req.authUser.blockedUsers },  // Fixed extra "new"
-        blockedUsers: { $ne: req.authUser._id },
-        friends: { $ne: req.authUser._id },
-        role: { $nin: ['ADMIN', 'SUPER ADMIN'] },
-        deletedAt: { $eq: null }
+        _id: { $ne: authUserId, $nin: authUserBlockedIds },  // Exclude the auth user and blocked users
+        blockedUsers: { $ne: authUserId },  // Ensure the current user is not in blockedUsers
+        friends: { $ne: authUserId },  // Ensure the current user is not in friends
+        role: { $nin: ['ADMIN', 'SUPER ADMIN'] },  // Exclude admin roles
+        deletedAt: { $eq: null }  // Only include non-deleted users
     };
 
-    if (req.query.profession === '1') filter['profession'] = req.authUser.profession;
-    if (req.query.education === '1') filter['education'] = req.authUser.education;
-    if (req.query.interests === '1') filter['interests'] = { $in: req.authUser.interests };
-    if (req.query.gender !== 'both') filter['gender'] = req.query.gender;
+    // Apply additional filters based on the query
+    if (req.query.profession === '1') {
+        filter['profession'] = req.authUser.profession;
+    }
+    if (req.query.education === '1') {
+        filter['education'] = req.authUser.education;
+    }
+    if (req.query.interests === '1') {
+        filter['interests'] = { $in: req.authUser.interests };
+    }
+    if (req.query.gender !== 'both') {
+        filter['gender'] = req.query.gender;
+    }
 
     return filter;
 }
@@ -732,8 +745,8 @@ function hasMoreUsers(users, limit, page) {
 function getRequestPopulationQuery(req) {
     return {
         $or: [
-            { from:  new mongoose.Types.ObjectId(req.auth._id) },
-            { to:  new mongoose.Types.ObjectId(req.auth._id) }
+            { from: new mongoose.Types.ObjectId(req.auth._id) },
+            { to: new mongoose.Types.ObjectId(req.auth._id) }
         ]
     };
 }
@@ -750,8 +763,8 @@ function getUserSelectFields(req) {
         avatar: 1,
         mainAvatar: 1,
         birthDate: { $cond: [{ $eq: ["$ageVisible", true] }, "$birthDate", null] },
-        followed: { $in: [ new mongoose.Types.ObjectId(req.auth._id), "$followers"] },
-        friend: { $in: [ new mongoose.Types.ObjectId(req.auth._id), "$friends"] },
+        followed: { $in: [new mongoose.Types.ObjectId(req.auth._id), "$followers"] },
+        friend: { $in: [new mongoose.Types.ObjectId(req.auth._id), "$friends"] },
         requests: 1,
         profession: 1,
         interests: 1,
@@ -898,7 +911,7 @@ exports.getFriends = async (req, res) => {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        const userId =  new mongoose.Types.ObjectId(req.authUser._id);
+        const userId = mongoose.Types.ObjectId(req.authUser._id);
 
         const user = await User.findById(userId);
         if (!user) {
@@ -985,14 +998,14 @@ exports.blockUser = async(req, res) => {
                     $or: [
                         {
                             $and: [
-                                {from:  new mongoose.Types.ObjectId(req.auth._id)},
-                                {to:  new mongoose.Types.ObjectId(req.user._id)}
+                                {from: mongoose.Types.ObjectId(req.auth._id)},
+                                {to: mongoose.Types.ObjectId(req.user._id)}
                             ]
                         },
                         {
                             $and: [
-                                {to:  new mongoose.Types.ObjectId(req.auth._id)},
-                                {from:  new mongoose.Types.ObjectId(req.user._id)}
+                                {to: mongoose.Types.ObjectId(req.auth._id)},
+                                {from: mongoose.Types.ObjectId(req.user._id)}
                             ]
                         }
                     ]

