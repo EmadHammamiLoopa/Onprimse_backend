@@ -70,6 +70,7 @@ exports.withAuthUser = async (req, res, next) => {
 
         // Fetch user by ID
         const user = await User.findById(userId);
+        console.log('User status:', user.enabled); // Log enabled status
 
         if (!user) {
             console.log('withAuthUser error: User not found');

@@ -5,15 +5,15 @@ require('dotenv').config(); // Load environment variables from .env file, if ava
 // Use the MONGODB_URL from your environment variables or replace it with your MongoDB connection string directly
 const db = process.env.MONGODB_URL || 'mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.mongodb.net/test?retryWrites=true&w=majority&appName=Cluster0';
 
-// Function to update mainAvatar and avatar URLs for all users
-const updateAvatarsForAllUsers = async () => {
+// Function to update mainAvatar and avatar URLs for all users back to localhost
+const revertAvatarsForAllUsers = async () => {
   try {
-    // Find and update users who have avatars starting with "http://127.0.0.1:3300/"
+    // Find and update users who have avatars starting with "https://project-9aw8.onrender.com/"
     const result = await User.updateMany(
       {
         $or: [
-          { mainAvatar: { $regex: '^http://127.0.0.1:3300/' } }, // Check for mainAvatar field
-          { 'avatar.0': { $exists: true, $regex: '^http://127.0.0.1:3300/' } } // Check if avatar array exists and matches
+          { mainAvatar: { $regex: '^https://project-9aw8.onrender.com/' } }, // Check for mainAvatar field
+          { 'avatar.0': { $exists: true, $regex: '^https://project-9aw8.onrender.com/' } } // Check if avatar array exists and matches
         ]
       },
       [
@@ -22,8 +22,8 @@ const updateAvatarsForAllUsers = async () => {
             mainAvatar: {
               $replaceOne: {
                 input: "$mainAvatar",
-                find: "http://127.0.0.1:3300/",
-                replacement: "https://project-9aw8.onrender.com/"
+                find: "https://project-9aw8.onrender.com/",
+                replacement: "http://127.0.0.1:3300/"
               }
             },
             avatar: {
@@ -33,8 +33,8 @@ const updateAvatarsForAllUsers = async () => {
                 in: {
                   $replaceOne: {
                     input: "$$item",
-                    find: "http://127.0.0.1:3300/",
-                    replacement: "https://project-9aw8.onrender.com/"
+                    find: "https://project-9aw8.onrender.com/",
+                    replacement: "http://127.0.0.1:3300/"
                   }
                 }
               }
@@ -44,18 +44,18 @@ const updateAvatarsForAllUsers = async () => {
       ]
     );
 
-    console.log(`Updated avatars for ${result.modifiedCount} users.`);
+    console.log(`Reverted avatars for ${result.modifiedCount} users.`);
   } catch (err) {
-    console.error('Error updating avatars:', err.message);
+    console.error('Error reverting avatars:', err.message);
   } finally {
     mongoose.connection.close();
   }
 };
 
-// Connect to MongoDB and run the update function
+// Connect to MongoDB and run the revert function
 mongoose.connect(db, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => {
     console.log('Connected to MongoDB');
-    updateAvatarsForAllUsers();
+    revertAvatarsForAllUsers();
   })
   .catch(err => console.error('Error connecting to MongoDB:', err.message));

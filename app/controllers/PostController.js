@@ -230,17 +230,17 @@ exports.storePost = async (req, res) => {
 
             // Send notification to channel followers and friends (excluding the author)
             const notificationTitle = populatedPost.anonymName || `${req.authUser.firstName} ${req.authUser.lastName}`;
-            sendNotification(
-                { en: req.channel.name },
-                { en: `${notificationTitle} shared a new post` },
-                {
-                    type: 'new-channel-post',
-                    link: `/tabs/channels/post/${populatedPost._id}`
-                },
-                [],
-                [...req.channel.followers, req.channel.user].filter(id => id !== req.auth._id && req.authUser.friends.includes(id))
-            );
-            console.log('Notification sent for new post');
+         //   sendNotification(
+           //     { en: req.channel.name },
+           //     { en: `${notificationTitle} shared a new post` },
+            //    {
+            //        type: 'new-channel-post',
+             //       link: `/tabs/channels/post/${populatedPost._id}`
+            //    },
+            //    [],
+            //    [...req.channel.followers, req.channel.user].filter(id => id !== req.auth._id && req.authUser.friends.includes(id))
+           // );
+           // console.log('Notification sent for new post');
 
             // Return the populated post as the response
             console.log('Returning Populated Post:', processedPost);
@@ -367,13 +367,27 @@ exports.deletePost = (req, res) => {
     }
 }
 
-exports.destroyPost = (res, postId, callback) => {
-    Post.remove({_id: postId}, (err, posts) => {
-        Report.remove({"entity.id": postId, "entity.name": 'post'}, (err, reports) => {
-            Comment.find({post: postId}, (err, comments) => {
-                comments.forEach(comment => destroyComment(res, comment._id, null))
-                if(callback) return callback(res)
-            })
-        })
-    })
-}
+exports.destroyPost = async (res, postId, callback) => {
+    try {
+        // Delete the post
+        await Post.deleteOne({ _id: postId });
+        
+        // Delete related reports
+        await Report.deleteMany({ "entity.id": postId, "entity.name": 'post' });
+
+        // Find and delete related comments
+        const comments = await Comment.find({ post: postId });
+        for (const comment of comments) {
+            await destroyComment(res, comment._id, null);
+        }
+
+        // If a callback is provided, call it after everything is deleted
+        if (callback) {
+            return callback(res);
+        }
+
+    } catch (err) {
+        console.error('Error deleting post and related data:', err);
+        return Response.sendError(res, 500, 'Error deleting post');
+    }
+};

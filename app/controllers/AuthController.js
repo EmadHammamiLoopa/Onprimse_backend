@@ -47,7 +47,7 @@ const autoFollowStaticChannels = async (authUser) => {
 exports.signup = async (req, res) => {
     try {
         const user = new User(req.body);
-
+        user.enabled = true;
         // Check if the email already exists
         const existingUser = await User.findOne({ email: user.email });
         if (existingUser) return Response.sendError(res, 400, 'Email already exists');
@@ -145,9 +145,15 @@ exports.signin = async (req, res) => {
         const user = await User.findOne({ email: normalizedEmail }).exec();
         if (!user) return Response.sendError(res, 400, 'Cannot find user with this email');
 
-        // Check if the user is banned or disabled
+        // Check if the user is banned
         if (user.banned) return Response.sendError(res, 400, 'This account has been banned');
-        if (!user.enabled) return Response.sendError(res, 401, 'Account disabled');
+
+        // Automatically enable user unless explicitly disabled (e.g., blocked by admin)
+        if (!user.enabled) {
+            console.log(`User ${user.email} was disabled, re-enabling...`);
+            user.enabled = true; // Re-enable the user automatically
+            await user.save();    // Save the updated user status
+        }
 
         // Authenticate the user by comparing the passwords
         const isAuthenticated = await user.authenticate(password);
@@ -174,6 +180,7 @@ exports.signin = async (req, res) => {
         return Response.sendError(res, 500, 'Internal server error');
     }
 };
+
 
 
 

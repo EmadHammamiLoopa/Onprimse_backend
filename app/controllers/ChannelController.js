@@ -691,48 +691,62 @@ exports.deleteChannel = async(req, res) => {
 }
 
 exports.followChannel = async (req, res) => {
-    const channel = req.channel;
+    try {
+        const channel = req.channel;
+        const user = req.authUser;
 
-    // Prevent unfollowing of static channels
-    if (channel.static) {
-        return Response.sendError(res, 400, 'You cannot unfollow static channels');
-    }
+        // Prevent unfollowing of static channels
+        if (channel.static) {
+            return Response.sendError(res, 400, 'You cannot unfollow static channels');
+        }
 
-    const user = req.authUser;
-    let followed = false;
+        let followed = false;
 
-    if (user && !channel.followers.includes(user._id)) {
-        channel.followers.push(user._id);
-        followed = true;
-    } else {
-        channel.followers.splice(channel.followers.indexOf(user._id), 1);
-    }
-
-    if (!user.followedChannels.includes(channel._id)) {
-        user.followedChannels.push(channel._id);
-        followed = true;
-    } else {
-        user.followedChannels.splice(user.followedChannels.indexOf(channel._id), 1);
-    }
-
-    channel.save((err, channel) => {
-        if (err || !channel) return Response.sendError(res, 400, 'Failed to update followers');
-        user.save((err, user) => {
-            if (err || !user) return Response.sendError(res, 400, 'Failed to update user data');
-            if (followed) {
-                sendNotification({
-                    en: channel.name
-                }, {
-                    en: req.authUser.firstName + ' ' + req.authUser.lastName + ' started following the channel'
-                }, {
-                    type: 'follow-channel',
-                    link: '/tabs/channels/channel?channel=' + channel._id
-                }, [], [channel.user]);
+        // Handle following/unfollowing the channel
+        if (user && !channel.followers.includes(user._id)) {
+            channel.followers.push(user._id);
+            followed = true;
+        } else {
+            const index = channel.followers.indexOf(user._id);
+            if (index !== -1) {
+                channel.followers.splice(index, 1);
             }
-            return Response.sendResponse(res, followed, followed ? `followed` : `unfollowed`);
-        });
-    });
+        }
+
+        // Handle user's followed channels
+        if (!user.followedChannels.includes(channel._id)) {
+            user.followedChannels.push(channel._id);
+            followed = true;
+        } else {
+            const index = user.followedChannels.indexOf(channel._id);
+            if (index !== -1) {
+                user.followedChannels.splice(index, 1);
+            }
+        }
+
+        // Save the channel and user changes
+        await channel.save();
+        await user.save();
+
+        // Send notification if followed
+        if (followed) {
+            sendNotification({
+                en: channel.name
+            }, {
+                en: `${req.authUser.firstName} ${req.authUser.lastName} started following the channel`
+            }, {
+                type: 'follow-channel',
+                link: `/tabs/channels/channel?channel=${channel._id}`
+            }, [], [channel.user]);
+        }
+
+        return Response.sendResponse(res, followed, followed ? `followed` : `unfollowed`);
+    } catch (err) {
+        console.log('Error following/unfollowing channel:', err);
+        return Response.sendError(res, 500, 'Failed to update followers');
+    }
 };
+
 
 exports.destroyChannel = async (res, channelId, callback) => {
     try {

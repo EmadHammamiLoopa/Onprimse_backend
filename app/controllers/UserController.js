@@ -911,7 +911,7 @@ exports.getFriends = async (req, res) => {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        const userId = mongoose.Types.ObjectId(req.authUser._id);
+        const userId = new mongoose.Types.ObjectId(req.authUser._id);
 
         const user = await User.findById(userId);
         if (!user) {
@@ -1025,36 +1025,47 @@ exports.unblockUser = (req, res) => {
     })
 }
 
-exports.updateRandomVisibility = (req, res) => {
+exports.updateRandomVisibility = async (req, res) => {
     try {
         const { userId, visible } = req.body;
         console.log('Request body:', req.body);  // Log the request body
 
-        User.updateOne({ _id: userId }, { $set: { randomVisible: visible }}, (err, result) => {
-            if (err || !result.nModified) {
-                console.log('Error or no modification:', err, result);  // Log error or no modification
-                return Response.sendError(res, 400, 'Failed, please try again later');
-            }
-            return Response.sendResponse(res, true, 'Updated');
-        });
+        // Use async/await to handle the promise returned by updateOne
+        const result = await User.updateOne({ _id: userId }, { $set: { randomVisible: visible }});
+
+        if (result.nModified === 0) {
+            console.log('No modification occurred:', result);  // Log no modification
+            return Response.sendError(res, 400, 'Failed, please try again later');
+        }
+
+        return Response.sendResponse(res, true, 'Updated');
     } catch (error) {
         console.log('Exception error:', error);  // Log exception error
         return Response.sendError(res, 500, 'Internal Server Error');
     }
 };
+
   
 
-exports.updateAgeVisibility = (req, res) => {
+exports.updateAgeVisibility = async (req, res) => {
     try {
         console.log(req.body.visible);
-        User.updateOne({_id: req.auth._id}, { $set: { ageVisible: req.body.visible }}, (err, user) => {
-            if(err || !user) return Response.sendError(res, 400, 'failed, please try again later')
-            return Response.sendResponse(res, true, 'updated')
-        })
+        
+        // Update the user's age visibility using async/await
+        const user = await User.updateOne({ _id: req.auth._id }, { $set: { ageVisible: req.body.visible } });
+
+        if (!user || user.nModified === 0) {
+            // If the user isn't found or no documents were modified
+            return Response.sendError(res, 400, 'Failed to update, please try again later');
+        }
+        
+        // Successfully updated
+        return Response.sendResponse(res, true, 'Age visibility updated');
     } catch (error) {
-        console.log(error);
+        console.error(error);
+        return Response.sendError(res, 500, 'Internal server error');
     }
-}
+};
 
 fileExtension = (fileName) => {
     nameParts = fileName.split('.')

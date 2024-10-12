@@ -86,11 +86,8 @@ userSchema.virtual('fullName').get(function() {
 userSchema.virtual('password')
     .set(function(password) {
         this._password = password;
-        // Use bcrypt to generate salt and hash
-        this.salt = bcrypt.genSaltSync(10);
-        this.hashed_password = bcrypt.hashSync(password, this.salt);
+        this.hashed_password = bcrypt.hashSync(password, 10);  // bcrypt handles salt internally
         console.log(`Setting password for ${this.email}`);
-        console.log(`Generated salt: ${this.salt}`);
         console.log(`Hashed password: ${this.hashed_password}`);
     })
     .get(function() {
@@ -99,25 +96,22 @@ userSchema.virtual('password')
 
 
 
+
 // Password encryption method
-userSchema.methods.encryptPassword = function(password) {
-    if (!password) return '';
-    try {
-        const encryptedPassword = crypto.createHmac('sha256', this.salt).update(password).digest('hex');
-        console.log(`Encrypting password: ${password} with salt: ${this.salt}`);
-        console.log(`Encrypted password: ${encryptedPassword}`);
-        return encryptedPassword;
-    } catch (err) {
-        console.error('Error encrypting password:', err);
-        return '';
-    }
-};
 
 // Authenticate method to compare passwords
 userSchema.methods.authenticate = async function(plainText) {
     console.log(`Authenticating user with plain text password: ${plainText}`);
 
-    // Use bcrypt to compare passwords, as bcrypt hashes are stored in the system now
+    if (this.isOldPasswordFormat()) {
+        // Re-hash using bcrypt if the password is in an old format
+        console.log('Old password format detected, re-hashing password...');
+        this.hashed_password = await bcrypt.hash(plainText, 10);
+        this.salt = undefined;  // Remove the old salt field if it was used
+        await this.save();
+        console.log('Password re-hashed and updated to new bcrypt format.');
+    }
+
     const isMatch = await bcrypt.compare(plainText, this.hashed_password);
 
     if (!isMatch) {
@@ -129,9 +123,9 @@ userSchema.methods.authenticate = async function(plainText) {
 };
 
 
+
 userSchema.methods.isOldPasswordFormat = function() {
-    // Example logic: check if the salt is missing or the hash is shorter/longer than expected
-    return !this.salt || this.hashed_password.length !== 64; // Adjust based on your old hash length
+    return !this.salt || this.hashed_password.length !== 60; // bcrypt hash length is typically 60 characters
 };
 
 
