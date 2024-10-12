@@ -81,6 +81,7 @@ http.listen(port, () => console.log("server connected at 127.0.0.1:" + port + " 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/products', express.static(path.join(__dirname, 'products')));
 
 app.use(helmet({
     crossOriginResourcePolicy: false,

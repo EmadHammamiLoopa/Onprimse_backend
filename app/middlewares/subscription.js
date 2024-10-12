@@ -19,13 +19,22 @@ exports.subscriptionById = async (req, res, next, id) => {
 };
 
 
-exports.userSubscribed = async(user) => {
-    if(user.subscription && user.subscription._id){
-        if(new Date(user.subscription.expireDate).getTime() > new Date().getTime()){
-            return true
+exports.userSubscribed = async (user) => {
+    if (user.subscription && user.subscription._id) {
+        if (new Date(user.subscription.expireDate).getTime() > new Date().getTime()) {
+            return true;
         }
-        
-        await User.updateOne({_id: user._id}, {$set: {subscription: null}}, (err, user) => console.log(user))
+
+        try {
+            // Use await to handle promises and remove callback
+            const result = await User.updateOne(
+                { _id: user._id }, 
+                { $set: { subscription: null } }
+            );
+            console.log('Update result:', result);
+        } catch (err) {
+            console.error('Error updating user subscription:', err);
+        }
     }
-    return false
-}
+    return false;
+};

@@ -58,28 +58,32 @@ exports.productOwner = (req, res, next) => {
 exports.productStorePermission = async(req, res, next) => {
     console.log('Product Store Permission middleware triggered');
     try {
+        // Check if the user has an active subscription
         if (await userSubscribed(req.authUser)) {
             console.log('User subscription check passed');
             return next();
         }
 
+        // Fetch the latest product for the authenticated user
         const products = await Product.find({ user: req.auth._id })
             .sort({ 'createdAt': -1 })
-            .limit(1)
-            .exec();  // No callback needed, returns a promise
+            .limit(1);  // No callback, using promises with await
 
         const currDate = new Date();
-        if (products.length > 0 && currDate.getTime() - (new Date(products[0].createdAt)).getTime() < 24 * 60 * 60 * 1000) {
+
+        // Check if the user has posted a product in the last 24 hours
+        if (products.length > 0 && currDate.getTime() - new Date(products[0].createdAt).getTime() < 24 * 60 * 60 * 1000) {
             console.log('Product store permission check failed');
             return Response.sendResponse(res, { date: products[0].createdAt });
         } else {
             console.log('Product store permission check passed');
-            next();
+            return next();
         }
     } catch (err) {
         console.error('Product find error:', err);
         return Response.sendError(res, 'An error has occurred, please try again later');
     }
 };
+
 
 
