@@ -15,11 +15,6 @@ const serviceSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    
-    reports: [{
-        type:  mongoose.Types.ObjectId,
-        ref: 'Report'
-    }],
     city: {
         type: String,
         required: true
@@ -45,14 +40,59 @@ const serviceSchema = new mongoose.Schema({
         }
     },
     user: {
-        type:  mongoose.Types.ObjectId,
+        type: mongoose.Types.ObjectId,
         ref: 'User',
         required: true
     },
     deletedAt: {
         type: Date,
         default: null
-    }
-}, {timestamps: true})
+    },
+    reports: [{
+        type: mongoose.Types.ObjectId,
+        ref: 'Report'
+    }],
 
-module.exports = mongoose.model('Service', serviceSchema)
+    // New Fields:
+    serviceCategory: {
+        type: String,
+        enum: ['Cleaning', 'Plumbing', 'Consulting', 'Electrical', 'Painting', 'Other'], // You can add more categories
+        required: true
+    },
+    serviceRate: {
+        type: String, // Can be hourly rate or fixed price
+        required: true
+    },
+    availability: {
+        type: String, // Description of available hours or days
+        required: true
+    },
+    Experience: {
+        type: String, // e.g., '5km radius', 'Specific neighborhoods'
+        required: true
+    },
+    serviceDuration: {
+        type: String, // e.g., '2 hours', '1 day'
+        required: true
+    },
+    paymentMethods: {
+        type: [String], // Array of accepted payment types
+        enum: ['Cash', 'Card', 'Online Payment'],
+        required: true
+    },
+    licenseCertification: {
+        type: String, // License or certification (if applicable)
+        default: null
+    },
+    websitePortfolio: {
+        type: String, // URL for website or portfolio
+        default: null
+    },
+    address: {
+        type: String, // Address where the service is provided
+        required: true
+    }
+
+}, { timestamps: true });
+
+module.exports = mongoose.model('Service', serviceSchema);

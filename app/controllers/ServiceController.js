@@ -57,7 +57,16 @@ exports.showServiceDash = async (req, res) => {
             phone: 1,
             photo: "$photo.path",
             user: 1,
-            deletedAt: 1
+            deletedAt: 1,
+            serviceCategory: 1,       // New field
+            serviceRate: 1,           // New field
+            availability: 1,          // New field
+            Experience: 1,           // New field
+            serviceDuration: 1,       // New field
+            paymentMethods: 1,        // New field
+            licenseCertification: 1,  // New field
+            websitePortfolio: 1,      // New field
+            address: 1                // New field
         }).populate('reports');
         if (!service) return Response.sendError(res, 500, 'Service not found');
         return Response.sendResponse(res, service);
@@ -66,6 +75,11 @@ exports.showServiceDash = async (req, res) => {
         return Response.sendError(res, 500, 'Server error, please try again later');
     }
 };
+
+exports.showService = (req, res) => {
+    return Response.sendResponse(res, req.service); // Includes all new fields if attached by serviceById
+};
+
 
 exports.allServices = async (req, res) => {
     try {
@@ -97,9 +111,7 @@ exports.allServices = async (req, res) => {
     }
 };
 
-exports.showService = (req, res) => {
-    return Response.sendResponse(res, req.service);
-};
+
 
 exports.postedServices = async (req, res) => {
     try {
@@ -166,9 +178,32 @@ exports.availableServices = async (req, res) => {
 
 exports.storeService = async (req, res) => {
     try {
-        const service = new Service(req.fields);
-        service.user = req.auth._id;
+        // Parse paymentMethods field if it's a string
+        if (typeof req.fields.paymentMethods === 'string') {
+            req.fields.paymentMethods = JSON.parse(req.fields.paymentMethods);
+        }
 
+        // Create the service object with all fields
+        const service = new Service({
+            title: req.fields.title,
+            company: req.fields.company,
+            country: req.fields.country,
+            city: req.fields.city,
+            phone: req.fields.phone,
+            description: req.fields.description,
+            serviceCategory: req.fields.serviceCategory,
+            serviceRate: req.fields.serviceRate,
+            availability: req.fields.availability,
+            Experience: req.fields.Experience,
+            serviceDuration: req.fields.serviceDuration,
+            paymentMethods: req.fields.paymentMethods, // Expecting an array
+            licenseCertification: req.fields.licenseCertification,
+            websitePortfolio: req.fields.websitePortfolio,
+            address: req.fields.address,
+            user: req.auth._id
+        });
+
+        // Store the photo
         if (req.files.photo) {
             storeServicePhoto(req.files.photo, service);
         } else {
@@ -183,6 +218,8 @@ exports.storeService = async (req, res) => {
         return Response.sendError(res, 400, 'Failed to create service');
     }
 };
+
+
 
 const storeServicePhoto = (photo, service) => {
     try {
@@ -203,7 +240,19 @@ exports.updateService = async (req, res) => {
     try {
         let service = req.service;
         const fields = _.omit(req.fields, ['photo']);
-        service = _.extend(service, fields);
+        
+        // Include the new fields to be updated
+        service = _.extend(service, fields, {
+            serviceCategory: req.fields.serviceCategory,  // New field
+            serviceRate: req.fields.serviceRate,          // New field
+            availability: req.fields.availability,        // New field
+            Experience: req.fields.Experience,          // New field
+            serviceDuration: req.fields.serviceDuration,  // New field
+            paymentMethods: req.fields.paymentMethods,    // New field
+            licenseCertification: req.fields.licenseCertification,  // New field
+            websitePortfolio: req.fields.websitePortfolio,          // New field
+            address: req.fields.address                  // New field
+        });
 
         if (req.files.photo) {
             storeServicePhoto(req.files.photo, service);
@@ -234,10 +283,14 @@ exports.destroyService = async (req, res) => {
         const service = req.service;
         const photoPath = path.join(__dirname, `./../../public/${service.photo.path}`);
 
-        await service.remove();
+        // Use deleteOne() to delete the service
+        await Service.deleteOne({ _id: service._id });
+
+        // Check if the photo exists and delete it if necessary
         if (fs.existsSync(photoPath)) {
             fs.unlinkSync(photoPath);
         }
+
         return Response.sendResponse(res, null, 'Service removed');
     } catch (err) {
         console.log(err);
