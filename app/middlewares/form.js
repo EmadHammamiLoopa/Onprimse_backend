@@ -5,6 +5,8 @@ module.exports = (req, res, next) => {
     console.log('Formidable middleware triggered');
     try {
         let form = new formidable.IncomingForm()
+        console.log('IncomingFormIncomingFormIncomingFormIncomingForm middleware triggered',form);
+
         form.keepExtensions = true;
         form.parse(req, (err, fields, files) => {
             if(err) {

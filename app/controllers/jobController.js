@@ -56,6 +56,20 @@ exports.showJobDash = async (req, res) => {
             city: 1,
             email: 1,
             photo: "$photo.path",
+            jobType: 1,
+            minSalary: 1,
+            maxSalary: 1,
+            experienceLevel: 1,
+            jobCategory: 1,
+            address:1,
+            remoteOption: 1,
+            applicationDeadline: 1,
+            jobRequirements: 1,
+            jobBenefits: 1,
+            educationLevel: 1,
+            industry: 1,
+            website: 1,
+            jobLocationType: 1,
             user: 1,
             deletedAt: 1
         }).populate('reports');
@@ -80,6 +94,20 @@ exports.allJobs = async (req, res) => {
                 photo: "$photo.path",
                 country: 1,
                 city: 1,
+                jobType: 1,
+                minSalary: 1,
+                maxSalary: 1,
+                experienceLevel: 1,
+                jobCategory: 1,
+                address:1,
+                remoteOption: 1,
+                applicationDeadline: 1,
+                jobRequirements: 1,
+                jobBenefits: 1,
+                educationLevel: 1,
+                industry: 1,
+                website: 1,
+                jobLocationType: 1,
                 deletedAt: 1,
                 reports: { $size: "$reports" }
             })
@@ -117,7 +145,12 @@ exports.postedJobs = async (req, res) => {
             photo: "$photo.path",
             country: 1,
             city: 1,
+            address:1,
             company: 1,
+            jobType: 1,
+            minSalary: 1,
+            maxSalary: 1,
+            industry: 1,
             description: 1,
             createdAt: 1
         }).sort({ createdAt: -1 }).skip(limit * page).limit(limit);
@@ -147,10 +180,15 @@ exports.availableJobs = async (req, res) => {
         const jobs = await Job.find(filter, {
             title: 1,
             photo: "$photo.path",
-            price: 1,
             country: 1,
             city: 1,
+            address:1,
+            jobType: 1,
+            minSalary: 1,
+            maxSalary: 1,
             company: 1,
+            industry: 1,
+
             description: 1,
             createdAt: 1
         }).sort({ createdAt: -1 }).skip(limit * page).limit(limit);
@@ -170,7 +208,7 @@ exports.storeJob = async (req, res) => {
     try {
         const job = new Job(req.fields);
         job.user = req.auth._id;
-
+console.log("userrrrrrrrrrrrrid",job.user);
         if (req.files.photo) {
             storeJobPhoto(req.files.photo, job);
         } else {
@@ -198,6 +236,7 @@ const storeJobPhoto = (photo, job) => {
         console.log(err);
     }
 };
+
 
 exports.updateJob = async (req, res) => {
     try {

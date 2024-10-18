@@ -1,4 +1,4 @@
-const mongoose = require('mongoose')
+const mongoose = require('mongoose');
 
 const jobSchema = new mongoose.Schema({
     title: {
@@ -15,10 +15,6 @@ const jobSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    reports: [{
-        type: mongoose.Types.ObjectId,
-        ref: 'Report'
-    }],
     city: {
         type: String,
         required: true
@@ -36,22 +32,92 @@ const jobSchema = new mongoose.Schema({
     photo: {
         path: {
             type: String,
-            required: true
+            required: function () { return !this.deletedAt; } // Only required if not deleted
         },
         type: {
             type: String,
-            required: true
+            required: function () { return !this.deletedAt; } // Only required if not deleted
         }
     },
     user: {
-        type:  mongoose.Types.ObjectId,
+        type: mongoose.Types.ObjectId,
         ref: 'User',
         required: true
     },
+    reports: [{
+        type: mongoose.Types.ObjectId,
+        ref: 'Report'
+    }],
     deletedAt: {
         type: Date,
         default: null
-    }
-}, {timestamps: true})
+    },
+    jobType: {
+        type: String,
+        enum: ['Full-time', 'Part-time', 'Contract', 'Internship'],
+        required: true
+    },
+    minSalary: {
+        type: Number,
+        required: false,
+        default: 0
+    },
+    maxSalary: {
+        type: Number,
+        required: false,
+        default: 0
+    },
+    experienceLevel: {
+        type: String,
+        enum: ['Entry-level', 'Mid-level', 'Senior'],
+        required: true
+    },
+    jobCategory: {
+        type: String,
+        required: true
+    },
+    remoteOption: {
+        type: String,
+        enum: ['Remote', 'Onsite', 'Hybrid'],
+        required: true
+    },
+    applicationDeadline: {
+        type: Date,
+        required: false
+    },
+    jobRequirements: {
+        type: String, // Can be changed to an array of skills if preferred
+        maxLength: 500,
+        required: true
+    },
 
-module.exports = mongoose.model('Job', jobSchema)
+    address: {
+        type: String, // Address where the service is provided
+        required: true
+    },
+    jobBenefits: {
+        type: String,
+        maxLength: 255,
+        required: false
+    },
+    educationLevel: {
+        type: String,
+        enum: ['High School', "Bachelor's", "Master's", 'PhD', 'Other'],
+        required: true
+    },
+    industry: {
+        type: String,
+        required: false
+    },
+    website: {
+        type: String,
+        required: false
+    },
+    jobLocationType: {
+        type: String,
+        enum: ['Headquarters', 'Branch Office'],
+        required: true
+    }
+}, { timestamps: true });
+
+module.exports = mongoose.model('Job', jobSchema);
