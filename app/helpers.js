@@ -49,51 +49,66 @@ exports.setOnlineUsers = (users) => {
 }
 
 exports.extractDashParams = (req, searchFields) => {
-    const page = req.query.page ? +req.query.page : 1
-    const limit = req.query.limit ? +req.query.limit : 0
-    const sortBy = req.query.sortBy ? req.query.sortBy : '_id'
-    const sortDir = req.query.sortDir ? +req.query.sortDir : 1
-    const searchQuery = req.query.searchQuery ? req.query.searchQuery : ""
-    const searchRegex = { $regex: searchQuery };
-    const searchfilter = []
-    const sort = {}
+    const page = req.query.page ? +req.query.page : 1;
+    const limit = req.query.limit ? +req.query.limit : 10;  // Default limit to 10 if not provided
+    const sortBy = req.query.sortBy ? req.query.sortBy : '_id';
+    const sortDir = req.query.sortDir ? +req.query.sortDir : 1;
+    const searchQuery = req.query.searchQuery ? req.query.searchQuery.trim() : "";
+    
+    const sort = {};
     sort[sortBy] = sortDir;
 
-    searchFields.forEach(schFld => {
-        const obj = {};
-        obj[schFld] = searchRegex
-        searchfilter.push(obj)
-    })
-
-    const filter = {
-        $or: searchfilter
+    // Build the search filter only if the searchQuery is present
+    let searchFilter = [];
+    if (searchQuery) {
+        searchFields.forEach(field => {
+            // Apply $regex only to string fields
+            if (field === 'text' || field === 'description' || field === 'title') {
+                let obj = {};
+                obj[field] = { $regex: searchQuery, $options: 'i' };  // Apply case-insensitive search for string fields
+                searchFilter.push(obj);
+            } else {
+                // For non-string fields, perform a direct match
+                let obj = {};
+                obj[field] = searchQuery;
+                searchFilter.push(obj);
+            }
+        });
     }
+
+    const filter = searchFilter.length > 0 ? { $or: searchFilter } : {};  // Add filter only if search fields are populated
 
     return {
         filter,
         sort,
         skip: limit * (page - 1),
         limit
-    }
-}
+    };
+};
 
-exports.report = (req, res, entityName, entityId, callback) => {
-   try {
-        const report = new Report()
-        report.entity = {
-            name: entityName,
-            _id: entityId
-        }
-        report.user = req.auth._id
-        report.message = req.body.message
-        report.save((err, report) => {
-            if(err || !report) return Response.sendError(res, 400, 'failed')
-            callback(report)
-        })
-   } catch (error) {
-       console.log(error);
-   }
-}
+
+
+exports.report = async (req, res, entityName, entityId) => {
+    try {
+        const report = new Report({
+            entity: entityId,
+            entityModel: entityName.charAt(0).toUpperCase() + entityName.slice(1),  // Ensure correct capitalization
+            user: req.auth._id,
+            message: req.body.message,
+            reportType: req.body.reportType // Ensure reportType is provided
+        });
+
+        await report.save();
+        return report; // Return the saved report instead of using a callback
+    } catch (error) {
+        console.log('Error saving report:', error);
+        return Response.sendError(res, 400, 'Failed to save report');
+    }
+};
+
+ 
+
+
 
 exports.adminCheck = (req) => {
     return req.auth.role == 'ADMIN' || req.auth.role == 'SUPER ADMIN'

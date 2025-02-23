@@ -23,20 +23,45 @@ const defaultOtherAvatarUrl = '/public/images/avatars/other.webp';
 
 
 
-exports.reportUser = (req, res) => {
+exports.reportUser = async (req, res) => {
     try {
-        const user = req.user
-        if(!req.body.message) return Response.sendError(res, 400, 'please enter a message')
-        report(req, res, 'user', user._id, (report) => {
-            User.updateOne({_id: user._id}, {$push: {reports: report}}, (err, user) => {
-                if(err) return Response.sendError(res, 400, 'failed')
-                return Response.sendResponse(res, null, 'Thank you for reporting')
-            })
-        })
+        const userId = req.params.userId; // Get the user ID from the request parameters
+
+        console.log('Request body:', req.body); // Debugging log
+
+        if (!req.body.message) {
+            return Response.sendError(res, 400, 'Please enter a message');
+        }
+
+        // Hardcoding `reportType` for testing purposes
+        if (!req.body.reportType) {
+            req.body.reportType = 'Other'; // Temporary fixed report type for testing
+            console.log('Report type fixed for testing:', req.body.reportType);
+        }
+
+        // Find the user being reported
+        const reportedUser = await User.findById(userId);
+        if (!reportedUser) {
+            return Response.sendError(res, 404, 'User not found');
+        }
+
+        // Call the `report` function
+        const reportInstance = await report(req, res, 'User', reportedUser._id);
+
+        // Update the reported user with the new report
+        await User.updateOne({ _id: reportedUser._id }, { $push: { reports: reportInstance } });
+
+        // Fetch and return the updated user with full report details
+        const updatedUser = await User.findOne({ _id: reportedUser._id })
+            .populate({ path: 'reports', model: 'Report' });
+
+        return Response.sendResponse(res, null, 'Thank you for reporting');
     } catch (error) {
-        console.log(error);
+        console.error('Error reporting user:', error);
+        return Response.sendError(res, 500, 'Server error, please try again later');
     }
-}
+};
+
 
 exports.removeAvatar = async (req, res) => {
     try {
@@ -135,63 +160,109 @@ exports.clearUserReports = (req, res) => {
 
 }
 
-exports.banUser = (req, res) => {
+
+exports.banUser = async (req, res) => {
     try {
-        const user = req.user
-        const message = req.body.message
+        const user = req.user;
+        const message = req.body.message;
         console.log(message);
-        user.banned = true
-        user.bannedReason = message
-        user.save((err, user) => {
-            if(err) return Response.sendError(res, 400, 'Server Error')
-            return Response.sendResponse(res, user, 'user banned')
-        })
+
+        // Update user properties
+        user.banned = true;
+        user.bannedReason = message;
+
+        // Save user to the database
+        await user.save();
+
+        // Create log entry
+        const logMessage = `User ID: ${user._id}\nBanned Reason: ${message}\nDate: ${new Date().toISOString()}\n\n`;
+
+        // Define the log path for Blockingusers.txt
+        const logPath = path.join('C:\\Users\\emadh\\Downloads\\packup\\packup_27.07\\31\\32\\isen-backend-master', 'Blockingusers.txt');
+        
+        // Write log to the Blockingusers.txt file
+        fs.appendFile(logPath, logMessage, (err) => {
+            if (err) {
+                console.error('Failed to write to log file', err);
+            }
+        });
+
+        return Response.sendResponse(res, user, 'User has been banned');
     } catch (error) {
         console.log(error);
+        return Response.sendError(res, 500, 'Server error');
     }
-}
+};
 
-exports.unbanUser = (req, res) => {
-    const user = req.user
-    user.banned = false
-    user.bannedReason = ''
-    user.save((err, user) => {
-        if(err) return Response.sendError(res, 400, 'Server Error')
-        return Response.sendResponse(res, user, 'user unbanned')
-    })
-}
 
-exports.allUsers = (req, res) => {
-    try{
-        dashParams = extractDashParams(req, ['firstName', 'lastName', 'email', 'role']);
-        User.aggregate()
-        .match(dashParams.filter)
-        .project({
-            firstName: 1,
-            lastName: 1,
-            email: 1,
-            role: 1,
-            avatar: "$avatar.path",
-            enabled: 1,
-            reports: {
-                $size: "$reports"
-            }
-        })
-        .sort(dashParams.sort)
-        .skip(dashParams.skip)
-        .limit(dashParams.limit)
-        .exec(async(err, users) => {
-            if(err || !users) return Response.sendError(res, 500, 'Server error, please try again later');
-            const count = await User.find(dashParams.filter).countDocuments();
-            return Response.sendResponse(res, {
-                docs: users,
-                totalPages: Math.ceil(count / dashParams.limit)
-            });
+exports.unbanUser = async (req, res) => {
+    try {
+        const user = req.user;
+
+        // Update user's banned status
+        user.banned = false;
+        user.bannedReason = '';
+
+        // Save the updated user object using async/await
+        await user.save();
+
+        return Response.sendResponse(res, user, 'User unbanned successfully');
+    } catch (err) {
+        console.error(err);
+        return Response.sendError(res, 500, 'Server error, unable to unban the user');
+    }
+};
+
+
+exports.allUsers = async (req, res) => {
+    try {
+        const dashParams = extractDashParams(req, ['firstName', 'lastName', 'email', 'role']);
+        
+        // Execute the aggregation pipeline
+        const users = await User.aggregate()
+            .match(dashParams.filter)
+            .project({
+                firstName: 1,
+                lastName: 1,
+                email: 1,
+                role: 1,
+                avatar: "$avatar.path", // Assuming avatar is stored in avatar.path
+                mainAvatar: 1, // Include mainAvatar in the projection
+                enabled: 1,
+                reports: {
+                    $size: "$reports"
+                },
+                subscription: 1 // Include subscription field in projection
+            })
+            .sort(dashParams.sort)
+            .skip(dashParams.skip)
+            .limit(dashParams.limit)
+            .exec();  // No callback here, now returns a promise
+
+        // Populate subscription for each user
+        const populatedUsers = await User.populate(users, {
+            path: 'subscription._id',
+            model: 'Subscription',
+            select: 'dayPrice weekPrice monthPrice yearPrice currency offers',
         });
-    }catch(err){
+
+        // Count documents
+        const count = await User.find(dashParams.filter).countDocuments();
+
+        // Send response
+        return Response.sendResponse(res, {
+            docs: populatedUsers,
+            totalPages: Math.ceil(count / dashParams.limit)
+        });
+        
+    } catch (err) {
         console.log(err);
+        return Response.sendError(res, 500, 'Server error, please try again later');
     }
-}
+};
+
+
+
 
 exports.storeUser = (req, res) => {
     try{
@@ -268,60 +339,89 @@ addGlobalChannels = async(user) => {
     }
 }
 
-exports.updateUserDash = (req, res) => {
-    try{
-        let user = req.user
-        const fields = _.omit(req.fields, ['password', 'avatar'])
+exports.updateUserDash = async (req, res) => {
+    try {
+        let user = req.user;
+        const fields = _.omit(req.fields, ['password', 'avatar']);
 
-        fields.interests = fields.interests.split(',')
-        user = _.extend(user, fields)
-        
-        if(req.fields.password != 'undefined'){
-            user.password = req.fields.password
+        // Convert interests from comma-separated string to an array
+        if (fields.interests) {
+            fields.interests = fields.interests.split(',');
         }
 
-        if(req.files.avatar) this.storeAvatar(req.files.avatar, user)
+        // Update the user object
+        Object.assign(user, fields);
 
-        user.save((err, user) => {
-            if(err) return Response.sendError(res, 400, 'Server error')
-            user = user.publicInfo();
-            Response.sendResponse(res, user, 'the user has been updated successfully')
-        })
-    }catch(err){
-        console.log(err);
+        // If password is provided, update it
+        if (req.fields.password && req.fields.password !== 'undefined') {
+            user.password = req.fields.password;
+        }
+
+        // If avatar is provided, store it
+        if (req.files && req.files.avatar) {
+            await this.storeAvatar(req.files.avatar, user);
+        }
+
+        // ✅ Save using `await` (without a callback)
+        await user.save();
+
+        // Remove sensitive data before sending response
+        const updatedUser = user.publicInfo();
+        return Response.sendResponse(res, updatedUser, 'The user has been updated successfully');
+    } catch (err) {
+        console.error('Error updating user dashboard:', err);
+        return Response.sendError(res, 500, 'Server error');
     }
-}
+};
 
-exports.showUserDash = (req, res) => {
+
+exports.showUserDash = async (req, res) => {
     try {
-        User.findOne({_id: req.user._id}, {
-            firstName: 1,
-            lastName: 1,
-            email: 1,
-            gender: 1,
-            country: 1,
-            city: 1,
-            birthDate: 1,
-            avatar: "$avatar.path",
-            role: 1,
-            enabled: 1,
-            interests: 1,
-            phone: 1,
-            school: 1,
-            banned: 1,
-            bannedReason: 1,
-            education: 1,
-            profession: 1
+        // Using async/await for the query
+        const user = await User.findOne(
+            { _id: req.user._id },
+            {
+                firstName: 1,
+                lastName: 1,
+                email: 1,
+                gender: 1,
+                country: 1,
+                city: 1,
+                birthDate: 1,
+                avatar: "$avatar.path",
+                mainAvatar:1,
+                role: 1,
+                enabled: 1,
+                interests: 1,
+                phone: 1,
+                school: 1,
+                banned: 1,
+                bannedReason: 1,
+                education: 1,
+                profession: 1,
+                reports: 1  // Ensure this is included in projection
+            }
+        )
+        .populate({
+            path: 'reports',  // Ensure reports are populated
+            select: 'reason description reportedBy createdAt status'  // Select only required fields
         })
-        .populate('reports')
-        .exec((err, user) => {
-            if(err || !user) return Response.sendError(res, 400, 'User not found')
-            return Response.sendResponse(res, user)
-        })
+        .exec();
+
+        // Check if the user exists
+        if (!user) {
+            return Response.sendError(res, 400, 'User not found');
+        }
+
+        // Send response with user data
+        return Response.sendResponse(res, user);
+
     } catch (error) {
-        console.log(error);
+        console.error(error);
+        return Response.sendError(res, 500, 'Server error');
     }
-}
+};
+
 
 exports.showUser = (req, res) => {
     try {
@@ -813,68 +913,63 @@ const isFriend = (authUser, user) => {
 };
 
 exports.getUserProfile = async (req, res) => {
-    console.log(`getUserProfilegetUserProfilegetUserProfile`); // Log the incoming user ID
+    console.log(`Fetching user profile for ID: ${req.params.userId}`);
 
     try {
         const userId = req.params.userId;
         const authUserId = req.auth._id;
 
-        console.log(`Looking for user with ID: ${userId}`);
         console.log(`Authenticated user ID: ${authUserId}`);
 
-        // Find the user by ID
-        const user = await User.findOne({ _id: userId }).select({
-            firstName: 1,
-            lastName: 1,
-            email: 1,
-            country: 1,
-            city: 1,
-            gender: 1,
-            avatar: 1,
-            mainAvatar: 1,
-            birthDate: 1,
-            profession: 1,
-            interests: 1,
-            education: 1,
-            school: 1,
-            enabled: 1,
-            is2FAEnabled: 1,
-            twoFAToken: 1,
-            role: 1,
-            banned: 1,
-            reports: 1,
-            followers: 1,
-            following: 1,
-            friends: 1,
-            blockedUsers: 1,
-            followedChannels: 1,
-            messagedUsers: 1,
-            randomVisible: 1,
-            ageVisible: 1,
-            loggedIn: 1,
-            visitProfile: 1,
-            salt: 1,
-            hashed_password: 1,
-            createdAt: 1,
-            updatedAt: 1,
-            aboutMe: 1,
-            lastSeen:1,
-        });
+        // Find the user by ID and populate the subscription details
+        const user = await User.findOne({ _id: userId })
+            .select({
+                firstName: 1,
+                lastName: 1,
+                email: 1,
+                country: 1,
+                city: 1,
+                gender: 1,
+                avatar: 1,
+                mainAvatar: 1,
+                birthDate: 1,
+                profession: 1,
+                interests: 1,
+                education: 1,
+                school: 1,
+                enabled: 1,
+                is2FAEnabled: 1,
+                twoFAToken: 1,
+                role: 1,
+                banned: 1,
+                followers: 1,
+                following: 1,
+                friends: 1,
+                blockedUsers: 1,
+                followedChannels: 1,
+                messagedUsers: 1,
+                randomVisible: 1,
+                ageVisible: 1,
+                loggedIn: 1,
+                visitProfile: 1,
+                lastSeen: 1,
+                aboutMe: 1,
+                subscription: 1, // Include subscription field
+                createdAt: 1,
+                updatedAt: 1
+            })
+            .populate({
+                path: 'subscription._id',
+                model: 'Subscription',
+                select: 'dayPrice weekPrice monthPrice yearPrice currency offers', // Only include necessary fields
+            });
 
         if (!user) return res.status(400).send('Failed to fetch user profile');
         if (user.deletedAt) return res.status(204).send();
 
-        console.log('User found:', JSON.stringify(user));
-
         // Set default avatar based on gender if no avatar is set
         if (!user.mainAvatar) {
-            if (user.gender === 'male') {
-                user.mainAvatar = defaultMaleAvatarUrl;
-            } else if (user.gender === 'female') {
-                user.mainAvatar = defaultFemaleAvatarUrl;
-            } else {
-                user.mainAvatar = defaultOtherAvatarUrl;
-            }
+            user.mainAvatar = user.getDefaultAvatar(); // Set default avatar based on gender
         }
 
         const relationshipStatus = isFriend(req.auth, user);
@@ -882,10 +977,16 @@ exports.getUserProfile = async (req, res) => {
 
         const response = {
             ...user._doc, // Include user data
+            subscription: user.subscription?._id ? {
+                ...user.subscription._id._doc, // Unwrap the subscription object fields
+                expireDate: user.subscription.expireDate
+            } : null, // Handle case when user doesn't have a subscription
             ...relationshipStatus,
             loggedIn: req.auth && req.auth._id.toString() === user._id.toString(), // Ensure loggedIn is set correctly
             online: user.loggedIn // Set the user's online status
         };
+
+        console.log('Sending user profile:', response);
 
         return res.status(200).send({ data: response });
     } catch (err) {
@@ -893,6 +994,8 @@ exports.getUserProfile = async (req, res) => {
         return res.status(500).send('Server error');
     }
 };
+
+
 
 exports.getFriends = async (req, res) => {
     try {
@@ -932,6 +1035,7 @@ exports.getFriends = async (req, res) => {
             lastName: 1,
             birthDate: { $cond: [{ $eq: ['$ageVisible', true] }, '$birthDate', null] },
             avatar: 1,
+            mainAvatar: 1,
             city: 1,
         })
         .skip(limit * page)
@@ -976,48 +1080,52 @@ exports.removeFriendship = async(req, res) => {
     }
 }
 
-exports.blockUser = async(req, res) => {
-    try{
-        const user = req.user
-        const authUser = req.authUser
-
-        user.friends.splice(user.friends.indexOf(authUser._id), 1)
-        user.followers.splice(user.friends.indexOf(authUser._id), 1)
-        user.following.splice(user.friends.indexOf(authUser._id), 1)
-
-        authUser.blockedUsers.push(user._id)
-        authUser.friends.splice(user.friends.indexOf(user._id), 1)
-        authUser.followers.splice(user.friends.indexOf(user._id), 1)
-        authUser.following.splice(user.friends.indexOf(user._id), 1)
-
-        authUser.save((err, result) => {
-            if(err || !result) return Response.sendError(res, 400, 'failed')
-            user.save((err, user) => {
-                if(err || !user) return Response.sendError(res, 400, 'failed')
-                Request.remove({
-                    $or: [
-                        {
-                            $and: [
-                                {from: mongoose.Types.ObjectId(req.auth._id)},
-                                {to: mongoose.Types.ObjectId(req.user._id)}
-                            ]
-                        },
-                        {
-                            $and: [
-                                {to: mongoose.Types.ObjectId(req.auth._id)},
-                                {from: mongoose.Types.ObjectId(req.user._id)}
-                            ]
-                        }
-                    ]
-                })
-                return Response.sendResponse(res, true, 'user blocked')
-            })
-        })
-    }catch(err){
-        console.log(err);
+exports.blockUser = async (req, res) => {
+    try {
+      const user = req.user;
+      const authUser = req.authUser;
+  
+      // Remove user from the lists of friends, followers, and following
+      user.friends = user.friends.filter(friend => !friend.equals(authUser._id));
+      user.followers = user.followers.filter(follower => !follower.equals(authUser._id));
+      user.following = user.following.filter(following => !following.equals(authUser._id));
+  
+      // Block the user and update authUser's lists
+      authUser.blockedUsers.push(user._id);
+      authUser.friends = authUser.friends.filter(friend => !friend.equals(user._id));
+      authUser.followers = authUser.followers.filter(follower => !follower.equals(user._id));
+      authUser.following = authUser.following.filter(following => !following.equals(user._id));
+  
+      // Save both authUser and user (use async/await for both saves)
+      await authUser.save();
+      await user.save();
+  
+      // Remove any requests between the two users
+      await Request.deleteMany({
+        $or: [
+          {
+            $and: [
+              { from: new mongoose.Types.ObjectId(req.auth._id) },
+              { to: new mongoose.Types.ObjectId(req.user._id) }
+            ]
+          },
+          {
+            $and: [
+              { to: new mongoose.Types.ObjectId(req.auth._id) },
+              { from: new mongoose.Types.ObjectId(req.user._id) }
+            ]
+          }
+        ]
+      });
+  
+      // Send a successful response
+      return Response.sendResponse(res, true, 'User blocked');
+      
+    } catch (err) {
+      console.error(err);
+      return Response.sendError(res, 500, 'Internal Server Error');
     }
-}
-
+  };
 exports.unblockUser = (req, res) => {
     User.updateOne({_id: req.auth._id}, { $pull: { blockedUsers: req.user._id }}, (err, user) => {
         if(err || !user) return Response.sendError(res, 400, 'failed')

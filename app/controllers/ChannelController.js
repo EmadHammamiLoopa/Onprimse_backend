@@ -9,6 +9,11 @@ const Report = require("../models/Report")
 const Post = require("../models/Post");
 const { destroyPost } = require("./PostController")
 const User = require("../models/User")
+const Comment = require("../models/Comment")
+
+
+
+
 
 exports.reportChannel = async (req, res) => {
     try {
@@ -77,7 +82,7 @@ exports.showChannel = async (req, res) => {
             city: 1,
             user: 1,
             approved: 1,
-            photo: "$photo.path",
+            photo: { $concat: ["http://127.0.0.1:3300", "$photo.path"] },
             enabled: 1,
             reports: 1
         }).populate('reports');
@@ -88,6 +93,74 @@ exports.showChannel = async (req, res) => {
         return Response.sendError(res, 500, 'Failed to retrieve channel');
     }
 };
+
+
+exports.allPosts = async (req, res) => {
+    try {
+        // Extract parameters for filtering, sorting, and pagination
+        const { filter, sort, skip, limit } = extractDashParams(req, ['text', 'channel', 'user', 'visibility']);
+
+        // First, count the total number of posts matching the filter
+        const totalPostsCount = await Post.countDocuments(filter);
+
+        // Fetch all posts with full admin control, including anonymous information
+        const posts = await Post.aggregate([
+            { $match: filter },  // Apply filter from query params
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'user',
+                    foreignField: '_id',
+                    as: 'userDetails'
+                }
+            },
+            {
+                $unwind: '$userDetails'  // Unwind the userDetails array
+            },
+            {
+                $project: {
+                    text: 1,
+                    media: 1,
+                    visibility: 1,
+                    createdAt: 1,
+                    updatedAt: 1,
+                    anonymName: 1,
+                    user: '$userDetails._id',
+                    realName: {
+                        $cond: {
+                            if: { $eq: ['$anonymName', null] },
+                            then: {
+                                $concat: [
+                                    { $ifNull: ['$userDetails.firstName', ''] }, 
+                                    ' ', 
+                                    { $ifNull: ['$userDetails.lastName', ''] }
+                                ]
+                            },
+                            else: '$anonymName'
+                        }
+                    },  // Show real name if not anonymous, otherwise show anonymous name
+                    comments: { $size: '$comments' },
+                    reports: { $size: '$reports' },
+                    channel: 1,
+                }
+            },
+            { $sort: sort },  // Apply sorting based on query params
+            { $skip: skip },  // Apply pagination
+            { $limit: limit }  // Limit the number of posts returned
+        ]);
+
+        // Return the response to the admin with full control over the posts
+        return Response.sendResponse(res, {
+            docs: posts,
+            totalPages: Math.ceil(totalPostsCount / limit),
+            currentPage: skip / limit + 1
+        });
+    } catch (err) {
+        console.error('Error fetching posts for admin:', err);
+        return Response.sendError(res, 500, 'Server error, please try again later.');
+    }
+};
+
 
 
 exports.allChannels = async (req, res) => {

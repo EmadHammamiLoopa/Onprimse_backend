@@ -1,0 +1,16 @@
+User ID: 66c7ba8cb077a84040bd9ee6
+Banned Reason: test1234
+Date: 2024-10-19T21:29:34.843Z
+
+User ID: 66c7ba8cb077a84040bd9eea
+Banned Reason: testtesttest
+Date: 2024-10-19T21:30:16.328Z
+
+User ID: 66c7ba8cb077a84040bd9eea
+Banned Reason: badtest
+Date: 2025-01-22T09:40:04.931Z
+
+User ID: 66e33eff890b931920e4a0ba
+Banned Reason: test1234
+Date: 2025-01-26T00:40:01.532Z
+

@@ -93,6 +93,8 @@ exports.getUsersMessages = async (req, res) => {
                 firstName: 1,
                 lastName: 1,
                 avatar: 1,
+                mainAvatar: 1,
+
                 messages: 1,
                 id: "$_id",
                 online: {

@@ -271,15 +271,23 @@ exports.deleteJob = async (req, res) => {
 exports.destroyJob = async (req, res) => {
     try {
         const job = req.job;
+
+        if (!job) {
+            return Response.sendError(res, 404, 'Job not found');
+        }
+
         const photoPath = path.join(__dirname, `./../../public/${job.photo.path}`);
 
-        await job.remove();
+        // Use deleteOne instead of remove()
+        await Job.deleteOne({ _id: job._id });
+
         if (fs.existsSync(photoPath)) {
             fs.unlinkSync(photoPath);
         }
-        return Response.sendResponse(res, null, 'Job removed');
+
+        return Response.sendResponse(res, null, 'Job successfully removed');
     } catch (err) {
-        console.log(err);
+        console.error(err);
         return Response.sendError(res, 400, 'Failed to remove job');
     }
 };

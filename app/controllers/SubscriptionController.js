@@ -3,6 +3,75 @@ const Subscription = require("../models/Subscription")
 const Response = require("./Response")
 const _ = require('lodash')
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
+const User = require("../models/User");
+
+
+
+
+// Existing controller methods...
+
+// New method to update subscription prices from the dashboard
+exports.updatePrices = async (req, res) => {
+    try {
+        const { dayPrice, weekPrice, monthPrice, yearPrice, currency, userId} = req.body;
+
+        if (userId) {
+            // Update prices only for this specific user
+            let userSubscription = await Subscription.findOne({ _id: req.params.subscriptionId, userId });
+            if (!userSubscription) {
+                return Response.sendError(res, 404, 'User-specific subscription not found');
+            }
+            userSubscription.dayPrice = dayPrice;
+            userSubscription.weekPrice = weekPrice;
+            userSubscription.monthPrice = monthPrice;
+            userSubscription.yearPrice = yearPrice;
+            userSubscription.currency = currency;
+
+            await userSubscription.save();
+            return Response.sendResponse(res, userSubscription, 'Prices updated for the specific user');
+        } else {
+            // Update prices for the global subscription (applies to all users)
+            let subscription = await Subscription.findOne({ _id: req.params.subscriptionId });
+            if (!subscription) {
+                return Response.sendError(res, 404, 'Subscription not found');
+            }
+            subscription.dayPrice = dayPrice;
+            subscription.weekPrice = weekPrice;
+            subscription.monthPrice = monthPrice;
+            subscription.yearPrice = yearPrice;
+            subscription.currency = currency;
+
+            await subscription.save();
+            return Response.sendResponse(res, subscription, 'Prices updated for all users');
+        }
+    } catch (error) {
+        console.error('Error updating prices:', error);
+        return Response.sendError(res, 500, 'Failed to update prices');
+    }
+};
+
+
+// New method to manage offers for subscriptions from the dashboard
+exports.manageOffers = async (req, res) => {
+    try {
+        const { offers } = req.body;
+        let subscription = await Subscription.findOne({ _id: req.params.subscriptionId });
+        
+        if (!subscription) {
+            return Response.sendError(res, 404, 'Subscription not found');
+        }
+
+        // Update the offers
+        subscription.offers = offers;  // Expecting offers to be an array of strings
+
+        await subscription.save();
+        return Response.sendResponse(res, subscription, 'Offers updated successfully');
+    } catch (error) {
+        console.error('Error updating offers:', error);
+        return Response.sendError(res, 500, 'Failed to update offers');
+    }
+};
+
 
 
 exports.getSubscription = async (req, res) => {
@@ -22,54 +91,137 @@ exports.showSubscription = (req, res) => {
     return Response.sendResponse(res, req.subscription)
 }
 
-exports.storeSubscription = (req, res) => {
+exports.storeSubscription = async (req, res) => {
     try {
-        subscription = new Subscription(req.fields)
-        subscription.offers = JSON.parse(req.fields.offers)
-        subscription.save((err, subscription) => {
-            if(err || !subscription) return Response.sendError(res, 400, 'Server error, please try again later')
-            return Response.sendResponse(res, subscription, 'the subscription has been created successfully')
-        }) 
-    } catch (error) {
-        console.log(error);
-    }
-}
+        const { offers, dayPrice, weekPrice, monthPrice, yearPrice, currency, userId } = req.body;
 
-exports.updateSubscription = (req, res) => {
+        let newSubscription;
+        if (userId) {
+            // Create a user-specific subscription
+            newSubscription = new Subscription({
+                offers,
+                dayPrice,
+                weekPrice,
+                monthPrice,
+                yearPrice,
+                currency,
+                userId
+            });
+        } else {
+            // Create a general subscription
+            newSubscription = new Subscription({
+                offers,
+                dayPrice,
+                weekPrice,
+                monthPrice,
+                yearPrice,
+                currency
+            });
+        }
+
+        await newSubscription.save();
+        return Response.sendResponse(res, newSubscription, 'Subscription created successfully');
+    } catch (error) {
+        console.error('Error creating subscription:', error);
+        return Response.sendError(res, 500, 'Server error, please try again later');
+    }
+};
+
+
+exports.updateSubscription = async (req, res) => {
     try {
-        let subscription = req.subscription
-        subscription = _.extend(subscription, req.fields)
-        subscription.offers = JSON.parse(req.fields.offers)
+        // Retrieve the subscription based on a specific identifier (e.g., `req.params.subscriptionId` or another filter)
+        const subscription = await Subscription.findOne({ _id: req.params.subscriptionId });
 
-        subscription.save((err, subscription) => {
-            if(err || !subscription) return Response.sendError(res, 400, 'Server error, please try again later')
-            return Response.sendResponse(res, subscription, 'the subscription has been updated successfully')
-        })
+        // If no subscription is found, return an error
+        if (!subscription) {
+            return Response.sendError(res, 400, 'Subscription not found');
+        }
+
+        // Merge the updated fields into the subscription object
+        Object.assign(subscription, req.fields);
+
+        // Parse the 'offers' field if it's provided as a JSON string
+        if (typeof req.fields.offers === 'string') {
+            subscription.offers = JSON.parse(req.fields.offers);
+        }
+
+        // Save the updated subscription using async/await
+        await subscription.save();
+
+        // Send a success response after saving
+        return Response.sendResponse(res, subscription, 'The subscription has been updated successfully');
     } catch (error) {
-        console.log(error);
+        console.error('Error updating subscription:', error);
+        return Response.sendError(res, 500, 'Server error, please try again later');
     }
-}
+};
 
-exports.allSubscriptions = (req, res) => {
-    try{
-        dashParams = extractDashParams(req, ['currency', 'offers']);
-        Subscription.find(dashParams.filter)
-        .sort(dashParams.sort)
-        .skip(dashParams.skip)
-        .limit(dashParams.limit)
-        .exec(async(err, subscriptions) => {
-            console.log(err);
-            if(err || !subscriptions) return Response.sendError(res, 400)
-            const count = await Subscription.find({}).countDocuments();
-            return Response.sendResponse(res, {
-                docs: subscriptions,
-                totalPages: Math.ceil(count / dashParams.limit)
-            })
-        })
-    }catch(err){
-        console.log(err);
+exports.allSubscriptions = async (req, res) => {
+    try {
+        const dashParams = extractDashParams(req, ['currency', 'offers']);
+
+        // Fetch all users
+        const users = await User.find().lean();
+
+        // Fetch all subscriptions
+        const subscriptions = await Subscription.find(dashParams.filter).lean();
+
+        // Create a map of subscriptions by userId
+        const subscriptionMap = subscriptions.reduce((acc, subscription) => {
+            acc[subscription.userId] = subscription; // Map subscriptions by userId
+            return acc;
+        }, {});
+
+        // Combine users with their subscriptions
+        const combinedData = users.map((user) => {
+            const userSubscription = subscriptionMap[user._id] || null; // Get subscription or null
+
+            return {
+                userId: user._id,
+                firstName: user.firstName || 'N/A',
+                lastName: user.lastName || 'N/A',
+                email: user.email || 'N/A',
+                subscriptionId: userSubscription ? userSubscription._id : 'N/A',
+                dayPrice: userSubscription ? userSubscription.dayPrice : 0,
+                weekPrice: userSubscription ? userSubscription.weekPrice : 0,
+                monthPrice: userSubscription ? userSubscription.monthPrice : 0,
+                yearPrice: userSubscription ? userSubscription.yearPrice : 0,
+                currency: userSubscription ? userSubscription.currency : 'N/A',
+                subscribed: userSubscription && new Date(userSubscription.expireDate) > new Date(), // Valid subscription
+            };
+        });
+
+        // Pagination logic
+        const startIndex = dashParams.skip || 0;
+        const endIndex = startIndex + (dashParams.limit || combinedData.length);
+        const paginatedData = combinedData.slice(startIndex, endIndex);
+
+        // Total count for pagination
+        const totalCount = users.length;
+
+        // Send response
+        return res.status(200).json({
+            success: true,
+            data: {
+                docs: paginatedData,
+                totalPages: Math.ceil(totalCount / (dashParams.limit || totalCount)),
+            },
+            message: null,
+        });
+    } catch (error) {
+        console.error('Error fetching subscriptions:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+        });
     }
-}
+};
+
+
+
+
+
 
 exports.subscriptions = (req, res) => {
     try{
@@ -82,13 +234,21 @@ exports.subscriptions = (req, res) => {
     }
 }
 
-exports.destroySubscription = (req, res) => {
-    let subscription = req.subscription
-    subscription.remove((err, subscription) => {
-        if(err) return Response.sendError(res, 400, 'failed to remove this subscription plan')
-        return Response.sendResponse(res, subscription)
-    })
-}
+exports.destroySubscription = async (req, res) => {
+    try {
+        const subscription = await Subscription.findByIdAndDelete(req.subscription._id);
+
+        if (!subscription) {
+            return Response.sendError(res, 400, 'Subscription not found or already removed');
+        }
+
+        return Response.sendResponse(res, subscription, 'Subscription removed successfully');
+    } catch (err) {
+        console.error('Error removing subscription:', err);
+        return Response.sendError(res, 500, 'Server error, failed to remove the subscription');
+    }
+};
+
 
 exports.clientSecret = async(req, res) => {
     console.log("Ssssssssssss")

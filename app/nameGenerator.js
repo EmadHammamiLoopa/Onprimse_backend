@@ -13,26 +13,59 @@ function simpleHash(str) {
 }
 
 function generateAnonymName(userId, postId) {
-    // Combine userId and postId to create a unique input for hashing
+    // Combine userId and postId to create a unique hash seed
     const combinedId = userId + '_' + postId;
     const hash = simpleHash(combinedId).toString();
 
-    const adjectives = ["Quick", "Clever", "Witty", "Swift", "Silent", "Mighty", "Bold", "Fierce", "Gentle", "Noble", "Stealthy", "Brave", "Daring", "Sly", "Wise", "Loyal"];
-    const animals = ["Eagle", "Falcon", "Panther", "Wolf", "Hawk", "Tiger", "Lion", "Bear", "Fox", "Jaguar", "Leopard", "Shark", "Cheetah", "Lynx", "Owl", "Raven"];
+    // Engaging adjectives (social-friendly & unique)
+    const adjectives = [
+        "Radiant", "Enigmatic", "Mystic", "Ethereal", "Celestial", "Luminous", "Velvet", "Golden",
+        "Crimson", "Azure", "Emerald", "Sapphire", "Amber", "Opalescent", "Gilded", "Silken",
+        "Whispering", "Dancing", "Flickering", "Blazing", "Serene", "Majestic", "Harmonic", "Vivid",
+        "Timeless", "Eclipsed", "Starlit", "Moonlit", "Sunlit", "Twilight", "Dreamlike", "Enchanted",
+        "Nebulous", "Shadowy", "Illustrious", "Arcane", "Runic", "Magnetic", "Mirrored", "Shimmering",
+        "Thunderous", "Galactic", "Hypernova", "Eclipse", "Starbound", "Borealis", "Lunar", "Solar"
+    ];
 
-    // Ensure the hash is long enough by converting it to a fixed length string
-    const extendedHash = (hash + simpleHash(hash)).toString();
+    // Unique and engaging creatures (fantasy & modern mix)
+    const animals = [
+        "Phoenix", "Griffin", "Unicorn", "Dragon", "Pegasus", "Kraken", "Sphinx", "Chimera",
+        "Mermaid", "Basilisk", "Centaur", "Hydra", "Yeti", "Leviathan", "Cerberus", "Fenrir",
+        "Valkyrie", "Nymph", "Satyr", "Kitsune", "Garuda", "Roc", "Simurgh", "Quetzalcoatl",
+        "Tengu", "Selkie", "Kelpie", "Banshee", "Djinn", "Ifrit", "Zephyr", "Aether",
+        "Astronaut", "Cyberwolf", "Starfox", "Moonwalker", "NeonPanther", "VoidTiger", "SolarFalcon",
+        "StormBear", "Galaxion", "NeonSphinx", "ShadowWraith", "LavaGolem", "ThunderWolf", "FrostDrake"
+    ];
 
-    // Use more characters from the extended hash to increase variability
-    const adjectiveIndex = parseInt(extendedHash.substring(0, 3), 10) % adjectives.length;
-    const animalIndex = parseInt(extendedHash.substring(3, 6), 10) % animals.length;
+    // Generate an extra layer of uniqueness (randomized number suffix)
+    const suffixNumbers = Array.from({ length: 10 }, (_, i) => i + 1); // Numbers 1-10 for more variety
 
-    const randomAdjective = adjectives[adjectiveIndex];
-    const randomAnimal = animals[animalIndex];
+    // Ensure the hash is long enough by converting it to a fixed-length string
+    const extendedHash = (hash + simpleHash(hash)).toString().padStart(10, '0'); // 🔹 Ensure it's always long enough
 
-    return `${randomAdjective}_${randomAnimal}`;
+    // 🔹 Ensure valid numeric indexes
+    const adjectiveIndex = Math.abs(parseInt(extendedHash.substring(0, 3), 10) || 0) % adjectives.length;
+    const animalIndex = Math.abs(parseInt(extendedHash.substring(3, 6), 10) || 0) % animals.length;
+    const suffixIndex = Math.abs(parseInt(extendedHash.substring(6, 8), 10) || 0) % suffixNumbers.length;
+
+    // Select words from the arrays
+    const randomAdjective = adjectives[adjectiveIndex] || "Mysterious"; // 🔹 Default to prevent "undefined"
+    const randomAnimal = animals[animalIndex] || "Entity"; // 🔹 Default to prevent "undefined"
+    const randomSuffix = suffixNumbers[suffixIndex];
+
+    return `${randomAdjective}_${randomAnimal}${randomSuffix}`;
 }
 
+// Example hashing function
+function simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = (hash << 5) - hash + char;
+        hash |= 0; // Convert to 32-bit integer
+    }
+    return Math.abs(hash);
+}
 
 
 function withVotesInfo(entity, userId, postId) {

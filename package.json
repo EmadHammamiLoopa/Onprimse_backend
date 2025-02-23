@@ -27,6 +27,7 @@
     "helmet": "^7.1.0",
     "http-proxy-middleware": "^3.0.2",
     "ip": "^1.1.9",
+    "json2csv": "^6.0.0-alpha.2",
     "jsonwebtoken": "^8.5.1",
     "lodash": "^4.17.21",
     "mongoose": "^8.7.0",

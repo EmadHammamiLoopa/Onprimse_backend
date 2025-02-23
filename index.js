@@ -112,6 +112,7 @@ app.use(setUrlInfo);
 app.use(updateUserInfo);
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/message', messageRoutes);
+app.use('/api/v1', reportRoutes);
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'your_secret_key',
@@ -201,7 +202,7 @@ app.get('*', (req, res) => {
 (async () => {
     const subscription = new Subscription();
     subscription.offers = [];
-    subscription.dayPrice = 0.5;
+    subscription.dayPrice = 120;
     subscription.weekPrice = 6;
     subscription.monthPrice = 20;
     subscription.yearPrice = 120;

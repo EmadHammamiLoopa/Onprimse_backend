@@ -5,6 +5,7 @@ const { userSubscribed } = require('./subscription');
 
 // Fetch service by ID
 exports.serviceById = async (req, res, next, id) => {
+    
     try {
         const service = await Service.findOne({ _id: id }, {
             title: 1,

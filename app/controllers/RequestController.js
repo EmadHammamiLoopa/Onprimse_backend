@@ -48,6 +48,8 @@ exports.requests = async (req, res) => {
         firstName: 1,
         lastName: 1,
         avatar: 1,
+        mainAvatar: 1,
+
       }, 'User')
       .select({ from: 1, createdAt: 1 })
       .skip(limit * page)

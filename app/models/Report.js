@@ -25,9 +25,21 @@ const reportSchema = new mongoose.Schema({
     // Add report type, status, and resolution fields
     reportType: {
         type: String,
-        required: true,
-        enum: ['Abuse', 'Spam', 'Inappropriate Content', 'Other'] // Example types, adjust as needed
-    },
+        required: false,
+        enum: [
+            'Abuse', 
+            'Spam', 
+            'Inappropriate Content', 
+            'Hate Speech', 
+            'Misinformation', 
+            'Harassment', 
+            'Violence', 
+            'Copyright Infringement', 
+            'Scam', 
+            'Illegal Activities', 
+            'Other'
+        ]
+        },
     status: {
         type: String,
         required: true,

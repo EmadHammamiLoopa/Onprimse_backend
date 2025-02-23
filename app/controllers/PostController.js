@@ -28,20 +28,43 @@ const upload = multer({ storage: storage });
 
 
 
-exports.reportPost = (req, res) => {
+exports.reportPost = async (req, res) => {
     try {
-        const post = req.post
-        if(!req.body.message) return Response.sendError(res, 400, 'please enter a message')
-        report(req, res, 'post', post._id, (report) => {
-            Post.updateOne({_id: post._id}, {$push: {reports: report}}, (err, post) => {
-                if(err) return Response.sendError(res, 400, 'failed')
-                return Response.sendResponse(res, null, 'Thank you for reporting')
-            })
-        })
+        const post = req.post;
+
+        // Log the request body to verify `reportType`
+        console.log('Request body:', req.body);
+
+        if (!req.body.message) {
+            return Response.sendError(res, 400, 'Please enter a message');
+        }
+
+        // Hardcoding `reportType` for testing purposes
+        if (!req.body.reportType) {
+            req.body.reportType = 'Other'; // Temporary fixed report type for testing
+            console.log('Report type fixed for testing:', req.body.reportType);
+        }
+
+        // Call the `report` function
+        const reportInstance = await report(req, res, 'Post', post._id);
+
+        // Update the post with the new report
+        await Post.updateOne({ _id: post._id }, { $push: { reports: reportInstance } });
+
+        // Fetch and return the updated post with full report details
+        const updatedPost = await Post.findOne({ _id: post._id })
+            .populate({ path: 'reports', model: 'Report' });
+        return Response.sendResponse(res, null, 'Thank you for reporting');
     } catch (error) {
-        console.log(error);
+        console.error('Error reporting post:', error);
+        return Response.sendError(res, 500, 'Server error, please try again later');
     }
-}
+};
+
+
+
+
+
 
 exports.channelPosts = (req, res) => {
     try{
@@ -56,9 +79,7 @@ exports.channelPosts = (req, res) => {
             text: 1,
             user: 1,
             channel: 1,
-            reports: {
-                $size: "$reports"
-            },
+            reports: 1,
             comments: {
                 $size: "$comments"
             }
@@ -102,34 +123,32 @@ exports.updateVisibility = (req, res) => {
 
 exports.showPost = async (req, res) => {
     try {
-        const post = await Post.findOne({
-            _id: req.post._id,
-            $or: [
-                { visibility: 'public' },
-                { visibility: 'private', user: req.auth._id },
-                { visibility: 'friends-only', user: { $in: req.authUser.friends } },
-                { user: req.auth._id }
-            ]
-        })
-        .populate({
-            path: 'comments',
-            populate: {
-                path: 'user',
-                select: 'firstName lastName'
-            }
-        })
-        .populate('user', 'firstName lastName')
-        .exec();
+        const post = await Post.findOne({ _id: req.post._id })
+            .populate({
+                path: 'comments',
+                populate: {
+                    path: 'user',
+                    select: 'firstName lastName'
+                }
+            })
+            .populate('user', 'firstName lastName')
+            .populate({ path: 'reports', model: 'Report' })
+            .exec();
 
-        // Handle if the post is not found
         if (!post) {
             return Response.sendError(res, 400, 'Post not found or unauthorized');
         }
 
-        // Apply votes info
+        // ✅ Ensure the correct anonymous name is included in the response
+        if (post.anonyme) {
+            if (!post.anonymName) {
+                post.anonymName = generateAnonymName(post.user, post._id);
+                await post.save(); // Store it permanently
+            }
+        }
+
         const postWithVotes = withVotesInfo(post, req.auth._id, post._id);
 
-        // Log and send response
         console.log("showPost response", postWithVotes);
         return Response.sendResponse(res, postWithVotes);
 
@@ -142,14 +161,31 @@ exports.showPost = async (req, res) => {
 
 
 
-exports.showDashPost = (req, res) => {
-    Post.findOne({_id: req.post._id})
-    .exec((err, post) => {
-        if(err || !post) return Response.sendError(res, 400, 'Server error')
-        post = withVotesInfo(post, req.auth._id);
-        return Response.sendResponse(res, post)
-    })
-}
+
+exports.showDashPost = async (req, res) => {
+    try {
+        // Fetch the post by its ID
+        const post = await Post.findById(req.post._id)
+        .populate({ path: 'reports', model: 'Report' }) // Ensure reports are correctly populated
+        .exec();
+        console.log("we hrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr");
+        // If post is not found, return an error
+        if (!post) {
+            return Response.sendError(res, 400, 'Post not found');
+        }
+        
+        // Add vote information to the post
+        const postWithVotes = withVotesInfo(post, req.auth._id);
+        
+        // Return the post with the additional vote information
+        return Response.sendResponse(res, postWithVotes);
+        
+    } catch (err) {
+        // Log the error and return a server error response
+        console.error(err);
+        return Response.sendError(res, 500, 'Server error');
+    }
+};
 
 exports.storePost = async (req, res) => {
 
@@ -252,8 +288,6 @@ exports.storePost = async (req, res) => {
     }
 };
 
-
-
 exports.getPosts = async (req, res) => {
     try {
         const { channelId } = req.params;
@@ -280,18 +314,28 @@ exports.getPosts = async (req, res) => {
                 }
             })
             .populate('user', 'firstName lastName')
+            .populate({ path: 'reports', model: 'Report' })
             .sort({ createdAt: -1 })
             .skip(page * limit)
             .limit(limit)
             .exec();
 
-        // If no posts are found or an error occurs
         if (!posts) {
             return Response.sendError(res, 400, 'Could not get the posts');
         }
 
-        // Apply votes information to each post
-        const postsWithVotes = posts.map(post => withVotesInfo(post, req.auth._id, post._id));
+        // ✅ Ensure Anonymous Name is Always Stored and Used
+        const postsWithVotes = posts.map(post => {
+            if (post.anonyme) {
+                // If anonymName is missing, generate and store it permanently
+                if (!post.anonymName) {
+                    post.anonymName = generateAnonymName(post.user, post._id);
+                    post.save(); // Ensure it's stored in the database
+                }
+            }
+            return withVotesInfo(post, req.auth._id, post._id);
+        });
+
         console.log("getPosts hit, posts:", postsWithVotes);
 
         // Count total number of posts matching the query
@@ -308,11 +352,6 @@ exports.getPosts = async (req, res) => {
         return Response.sendError(res, 500, 'Server error');
     }
 };
-
-
-
-
-
 
 exports.voteOnPost = (req, res) => {
     try{
@@ -374,11 +413,12 @@ exports.destroyPost = async (res, postId, callback) => {
         
         // Delete related reports
         await Report.deleteMany({ "entity.id": postId, "entity.name": 'post' });
+        await Report.deleteMany({ "entity.id": { $in: comments.map(comment => comment._id) }, "entity.name": 'comment' }); // Delete reports for comments
 
         // Find and delete related comments
         const comments = await Comment.find({ post: postId });
         for (const comment of comments) {
-            await destroyComment(res, comment._id, null);
+            await exports.destroyComment(res, comment._id);  // Updated to await
         }
 
         // If a callback is provided, call it after everything is deleted
@@ -386,8 +426,13 @@ exports.destroyPost = async (res, postId, callback) => {
             return callback(res);
         }
 
+        return Response.sendResponse(res, null, 'Post and related data deleted successfully');
+
     } catch (err) {
         console.error('Error deleting post and related data:', err);
-        return Response.sendError(res, 500, 'Error deleting post');
+        if (!res.headersSent) {
+            return Response.sendError(res, 500, 'Error deleting post');
+        }
     }
 };
+

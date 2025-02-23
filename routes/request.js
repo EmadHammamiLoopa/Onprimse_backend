@@ -12,7 +12,7 @@ router.post('/reject/:requestId', [requireSignin, requestReceiver, isNotBlocked]
 router.post('/cancel/:requestId', [requireSignin, withAuthUser, requestSender, isNotBlocked], cancelRequest);
 router.post('/:userId', [requireSignin, withAuthUser, isNotFriend, requestNotExist, sendRequestPermission], storeRequest);
 
-router.get('/', [requireSignin], requests)
+router.get('/requests', [requireSignin], requests)
 
 router.param('requestId', requestById)
 router.param('userId', userById);  // Apply requireSignin first

@@ -5,6 +5,8 @@ const User = require('../models/User');
 require('dotenv').config();
 
 exports.requireSignin = (req, res, next) => {
+    console.log('requireSignin middleware called');
+
     expressJWT({
         secret: process.env.JWT_SECRET,
         algorithms: ['HS256'],

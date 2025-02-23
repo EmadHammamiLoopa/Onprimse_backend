@@ -10,7 +10,8 @@ const {
     updateVisibility,
     showPost,
     channelPosts,
-    showDashPost
+    showDashPost,
+    allPosts
 } = require('../app/controllers/PostController');
 
 const { requireSignin, withAuthUser, isAdmin } = require('../app/middlewares/auth');

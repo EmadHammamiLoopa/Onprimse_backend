@@ -8,7 +8,8 @@ const {
     reportComment,
     getDashComments,
     showComment,
-    postComments
+    postComments,
+    
 } = require('../app/controllers/CommentController');
 
 const { requireSignin, withAuthUser, isAdmin } = require('../app/middlewares/auth');
@@ -17,8 +18,10 @@ const { postById } = require('../app/middlewares/post');
 const { storeCommentValidator } = require('../app/middlewares/validators/CommentValidator');
 
 const router = express.Router()
-
+router.param('commentId', commentById)
+router.param('postId', postById)
 router.get('/post/:postId/comments', [requireSignin, isAdmin], postComments)
+
 router.get('/comment/:commentId', [requireSignin], showComment)
 
 router.post('/post/:postId/comment', [requireSignin, withAuthUser], storeComment)
@@ -27,7 +30,6 @@ router.delete('/comment/:commentId', [requireSignin, commentOwner], deleteCommen
 router.post('/comment/:commentId/vote', [requireSignin, withAuthUser], voteOnComment)
 router.post('/comment/:commentId/report', [requireSignin], reportComment)
 
-router.param('commentId', commentById)
-router.param('postId', postById)
+
 
 module.exports = router

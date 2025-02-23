@@ -25,8 +25,11 @@ const subscriptionSchema = new mongoose.Schema({
     currency: {
         type: String,
         maxLength: 4,
-        required: true
-    }
+        required: true,
+        default: 'USD'
+    },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User'}, // Optional user-specific field
+
 }, {timestamps: true})
 
 module.exports = mongoose.model('Subscription', subscriptionSchema)

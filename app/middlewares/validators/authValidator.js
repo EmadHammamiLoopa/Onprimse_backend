@@ -31,18 +31,38 @@ exports.signupValidator = (req, res, next) => {
     next();
 }
 
-// Corrected typo for the signin validator
+
+
 exports.signinValidator = [
-    check('email').isEmail().withMessage('Must be a valid email address'),
-    check('password').not().isEmpty().withMessage('Password is required'),
+    // Check email validity
+    check('email')
+        .trim()  // Remove extra spaces
+        .isEmail().withMessage('Invalid email format. Please provide a valid email address.')
+        .not().isEmpty().withMessage('Email is required.')
+        .normalizeEmail(),  // Normalize the email
+
+    // Check password validity
+    check('password')
+        .trim()  // Remove extra spaces
+        .not().isEmpty().withMessage('Password cannot be empty.')
+        .isLength({ min: 6 }).withMessage('Password must be at least 6 characters long.'),  // Password length check
+
+    // General error handling
     (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+            return res.status(400).json({
+                message: "Validation failed. Please check your input.",
+                errors: errors.array().map(err => ({
+                    field: err.param,
+                    message: err.msg
+                }))
+            });
         }
         next();
     }
 ];
+
 
 
 exports.checkEmailValidator = (req, res, next) => {

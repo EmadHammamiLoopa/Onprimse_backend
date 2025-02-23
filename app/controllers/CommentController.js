@@ -22,18 +22,62 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 
+exports.showComment = async (req, res) => {
+    try {
+        // Find the comment by ID
+        const comment = await Comment.findOne({ _id: req.comment._id }).populate('reports');;
+        console.log('responseData in comment:', comment);
+
+        if (!comment) {
+            return Response.sendError(res, 400, 'Comment not found');
+        }
+
+        // Convert Mongoose document to plain object for modification
+        let responseData = comment.toObject();
+        console.log('responseData in responseData:', responseData);
+
+        // Check if media is attached and format URL if present
+        if (comment.media && comment.media.url) {
+            responseData.mediaUrl = `http://127.0.0.1:3300/${comment.media.url.replace(/\\/g, '/')}`; // Set mediaUrl field with formatted URL
+            responseData.mediaExpiryDate = comment.media.expiryDate; // Set mediaExpiryDate field with expiry date
+        } else {
+            // No media attached
+            responseData.mediaUrl = null;
+            responseData.mediaExpiryDate = null;
+        }
+
+        // Remove the original media field (optional)
+        delete responseData.media;
+
+        // Return the full comment with media details (mediaUrl and mediaExpiryDate)
+        return Response.sendResponse(res, responseData);
+    } catch (err) {
+        console.error('Error in showComment:', err);
+        return Response.sendError(res, 500, 'Server error');
+    }
+};
+
+
 
 exports.reportComment = async (req, res) => {
     try {
         const comment = req.comment;
         if (!req.body.message) return Response.sendError(res, 400, 'Please enter a message');
 
+        // Report the comment and return the full report details
         const reportData = await report(req, res, 'comment', comment._id);
         await Comment.updateOne({ _id: comment._id }, { $push: { reports: reportData } });
 
-        return Response.sendResponse(res, null, 'Thank you for reporting');
+        // Fetch and return the updated comment with report details
+        const updatedComment = await Comment.findOne({ _id: comment._id })
+            .populate({
+                path: 'reports',
+                model: 'Report'
+            });
+
+        return Response.sendResponse(res, updatedComment, 'Thank you for reporting');
     } catch (error) {
-        console.log(error);
+        console.error('Error in reportComment:', error);
         return Response.sendError(res, 500, 'Server error');
     }
 };
@@ -50,7 +94,7 @@ exports.postComments = async (req, res) => {
                 text: 1,
                 user: 1,
                 post: 1,
-                reports: { $size: "$reports" }
+                reports: 1 // Include full report details
             })
             .sort(dashParams.sort)
             .skip(dashParams.skip)
@@ -72,51 +116,31 @@ exports.postComments = async (req, res) => {
 };
 
 
-exports.showComment = async (req, res) => {
-    try {
-        const comment = await Comment.findOne({ _id: req.comment._id });
-        if (!comment) return Response.sendError(res, 400, 'Server error');
-        return Response.sendResponse(res, comment);
-    } catch (err) {
-        console.log(err);
-        return Response.sendError(res, 500, 'Server error');
-    }
-};
 
 
 exports.storeComment = async (req, res) => {
     try {
-        // Process media upload first
         upload.single('media')(req, res, async function (err) {
             if (err) {
-                console.error('Multer Error:', err);  // Handle multer errors
+                console.error('Multer Error:', err);
                 return Response.sendError(res, 400, 'Error uploading media');
             }
 
             console.log('Multer processed request successfully');
-            console.log('Request Body:', req.body);  // Log the text and anonymity status
-            console.log('Uploaded File:', req.file);  // Log the file info if any
+            console.log('Request Body:', req.body);
+            console.log('Uploaded File:', req.file);
 
             const post = req.post;
             let anonymName = null;
 
-            // Check if user has already commented on this post with an anonymous name
-            const previousComment = await Comment.findOne({
-                post: post._id,
-                user: req.auth._id,
-                anonyme: true
-            });
-
-            console.log('Previous Comment Found:', previousComment ? previousComment.anonymName : 'No previous anonymous comment found');
-
-            if (previousComment && previousComment.anonymName) {
-                // Reuse the anonymName if the user has already commented on this post
-                anonymName = previousComment.anonymName;
-                console.log('Reusing anonymName:', anonymName);
-            } else if (req.body.anonyme === 'true') {
-                // Generate a new anonymName if this is the first anonymous comment for the user on this post
-                anonymName = generateAnonymName(req.auth._id, post._id);
-                console.log('Generated anonymName:', anonymName);
+            if (req.body.anonyme === 'true') {
+                // Ensure that the user always gets the same anonymous name from the post
+                if (!post.anonymName) {
+                    post.anonymName = generateAnonymName(req.auth._id, post._id);
+                    await post.save();  // Ensure consistency across all comments
+                }
+                anonymName = post.anonymName;
+                console.log('Using post anonymName:', anonymName);
             }
 
             // Create a new comment
@@ -124,22 +148,20 @@ exports.storeComment = async (req, res) => {
                 text: req.body.text.trim(),
                 user: req.auth._id,
                 post: post._id,
-                anonymName: anonymName, // Set the anonymName
+                anonymName: anonymName, // Use the same anonymous name as the post
                 anonyme: req.body.anonyme === 'true'
             });
 
             // If media is uploaded, attach it to the comment
             if (req.file) {
                 comment.media = {
-                    url: req.file.path, // Store the file path
-                    expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000) // Set a 24-hour expiry for the media
+                    url: req.file.path,
+                    expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000)
                 };
                 console.log('Media attached to comment:', comment.media);
             }
 
             console.log('Saving Comment:', comment);
-
-            // Save the comment to the database
             const savedComment = await comment.save();
             console.log('Saved Comment:', savedComment);
 
@@ -160,30 +182,6 @@ exports.storeComment = async (req, res) => {
             await post.save();
             console.log('Updated Post with New Comment:', post);
 
-            // Send notification if the comment is on someone else's post
-            if (post.user != req.auth._id) {
-                const channel = await Channel.findOne({ _id: post.channel });
-                console.log('Channel Found for Notification:', channel);
-
-                if (channel) {
-                    sendNotification(
-                        { en: channel.name },
-                        {
-                            en: (commentWithVotes.anonyme ? 'Anonym' : req.authUser.firstName + ' ' + req.authUser.lastName) + ' commented on your post'
-                        },
-                        {
-                            type: 'new-post-comment',
-                            link: '/tabs/channels/post/' + post._id
-                        },
-                        [],
-                        [post.user]
-                    );
-                    console.log('Notification sent for new comment');
-                }
-            }
-
-            // Return the populated comment as the response
-            console.log('Returning Populated Comment:', commentWithVotes);
             return Response.sendResponse(res, commentWithVotes, 'Comment created');
         });
     } catch (err) {
@@ -191,6 +189,7 @@ exports.storeComment = async (req, res) => {
         return Response.sendError(res, 500, 'Server error');
     }
 };
+
 
 
 
@@ -234,7 +233,6 @@ exports.voteOnComment = async (req, res) => {
     }
 };
 
-
 exports.getComments = async (req, res) => {
     try {
         const limit = 8;
@@ -256,12 +254,20 @@ exports.getComments = async (req, res) => {
         // Count the total number of comments
         const count = await Comment.countDocuments({ post: post._id }).exec();
 
-        // Map the comments with vote information
-        const commentsWithVotes = comments.map(comment =>
-            withVotesInfo(comment, req.auth._id, comment.post._id)
-        );
+        // Ensure the correct anonymous name is used for comments
+        const commentsWithVotes = comments.map(comment => {
+            if (comment.anonyme) {
+                // ✅ If the user is the post author, force them to use the post's anonymous name
+                if (comment.user.toString() === post.user.toString()) {
+                    comment.anonymName = post.anonymName;
+                } else {
+                    // ✅ Otherwise, reuse the stored anonymName
+                    comment.anonymName = comment.anonymName || post.anonymName;
+                }
+            }
+            return withVotesInfo(comment, req.auth._id, post._id);
+        });
 
-        // Send the response with comments and more pages info
         return Response.sendResponse(res, {
             comments: commentsWithVotes,
             more: (count - (limit * (page + 1))) > 0
@@ -272,7 +278,6 @@ exports.getComments = async (req, res) => {
         return Response.sendError(res, 500, 'Server error');
     }
 };
-
 
 
 exports.deleteComment = (req, res) => {
@@ -286,11 +291,82 @@ exports.deleteComment = (req, res) => {
 
 exports.destroyComment = async (res, commentId, callback) => {
     try {
-        await Comment.remove({ _id: commentId });
-        await Report.remove({ 'entity.id': commentId, 'entity.name': 'comment' });
+        // Delete the comment
+        await Comment.deleteOne({ _id: commentId });
+
+        // Remove any associated reports for the comment
+        await Report.deleteMany({ 'entity.id': commentId, 'entity.name': 'comment' });
+
+        // If a callback exists, call it
         if (callback) return callback(res);
     } catch (err) {
         console.log(err);
         return Response.sendError(res, 500, 'Server error');
+    }
+};
+
+
+exports.getAllCommentsForAdmin = async (req, res) => {
+    try {
+        const dashParams = extractDashParams(req, ['text', 'user', 'post']);
+        const limit = dashParams.limit || 20;
+        const page = dashParams.page || 0;
+
+        const comments = await Comment.aggregate()
+            .match(dashParams.filter)
+            .lookup({
+                from: 'users',
+                localField: 'user',
+                foreignField: '_id',
+                as: 'user'
+            })
+            .lookup({
+                from: 'posts',
+                localField: 'post',
+                foreignField: '_id',
+                as: 'post'
+            })
+            .lookup({
+                from: 'reports',
+                localField: 'reports',
+                foreignField: '_id',
+                as: 'reports'
+            }) // Add report details
+            .unwind('$user')
+            .unwind('$post')
+            .project({
+                _id: 1,
+                text: 1,
+                user: "$user._id",
+                post: "$post._id",
+                anonyme: 1,
+                reportsCount: { $size: "$reports" },
+                mediaUrl: {
+                    $cond: { if: { $ne: ["$media.url", null] }, then: { $concat: ["http://127.0.0.1:3300/", { $replaceAll: { input: "$media.url", find: "\\", replacement: "/" } }] }, else: null }
+                },
+                mediaExpiryDate: "$media.expiryDate",
+                reports: 1, // Include full reports
+                votes: 1,
+                moderationStatus: 1,
+                reactionCounts: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                flagged: { $gt: [{ $size: "$reports" }, 0] }
+            })
+            .sort(dashParams.sort)
+            .skip(page * limit)
+            .limit(limit)
+            .exec();
+
+        const count = await Comment.find(dashParams.filter).countDocuments();
+
+        return Response.sendResponse(res, {
+            docs: comments,
+            totalPages: Math.ceil(count / limit),
+            currentPage: page
+        });
+    } catch (err) {
+        console.error('Error in getAllCommentsForAdmin:', err);
+        return Response.sendError(res, 500, 'Failed to retrieve comments for admin');
     }
 };

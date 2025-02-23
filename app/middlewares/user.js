@@ -25,6 +25,11 @@ exports.userById = async (req, res, next, id) => {
             console.log(`mainAvatarmainAvatarmainAvaeeeeeeeeeeetar`); // Log if avatar is missing
         }
 
+        if (user.subscription && user.subscription._id) {
+            user.subscription._id = user.subscription._id.toString();
+          }
+          
+
         console.log(`User found: ${user}`); // Log the found user
         req.user = user;
         next();
