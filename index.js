@@ -10,7 +10,7 @@ const session = require('express-session');
 const passport = require('./routes/passport');  // Adjust the path to your passport configuration
 const schedule = require('node-schedule');
 const Comment = require("./app/models/Comment")
-
+const peerStore = require('./app/utils/peerStorage'); // ✅ Use shared storage
 // import routes
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
@@ -24,6 +24,7 @@ const postRoutes = require('./routes/post');
 const commentRoutes = require('./routes/comment');
 const subscriptionRoutes = require('./routes/subscription');
 const reportRoutes = require('./routes/report');
+const jwt = require('jsonwebtoken');
 
 // import middlewares
 const { notFoundError, invalidTokenError } = require('./app/middlewares/errors');
@@ -36,7 +37,12 @@ const Follow = require('./app/models/Follow');
 const Channel = require('./app/models/Channel');
 const Service = require('./app/models/Service');
 const Job = require('./app/models/Job');
-const { sendNotification } = require('./app/helpers');
+// Bootstrap helpers with a live Socket.IO reference
+
+
+
+const helpers = require('./app/helpers');
+
 const Message = require('./app/models/Message');
 const Post = require('./app/models/Post');
 const { deleteUser } = require('./app/controllers/UserController');
@@ -64,14 +70,56 @@ const removeExpiredMedia = async () => {
 
 const http = require('http').Server(app);
 const io = require('socket.io')(http, {
-    cors: {
-        origins: "*"
-    }
+  cors: {
+    origin: ["http://localhost:4200", "http://localhost:4202"], 
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], //  ← add PATCH
+    allowedHeaders: ['Content-Type', 'Authorization'],
+
+    credentials: true
+  }
 });
+
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+
+  if (!token) {
+    console.log("❌ No token provided in socket connection");
+    return next(new Error("Authentication error: missing token"));
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    socket.userId = decoded._id;
+    console.log(`✅ WebSocket authenticated for userId: ${socket.userId}`);
+    next();
+  } catch (err) {
+    console.error("❌ Invalid token", err);
+    return next(new Error("Authentication error: invalid token"));
+  }
+});
+
+
+app.set('io', io);
+module.exports.io = io;   
+const { sendNotification, notifyPeerNeeded } = helpers;   // now both are defined
+
 const { ExpressPeerServer } = require('peer');
 const peerServer = ExpressPeerServer(http, {
     debug: true
 });
+
+
+peerServer.on("connection", (client) => {
+  console.log(`✅ New peer connected with ID: ${client.getId()}`);
+
+  const userId = client.getId().split('-')[0]; // Extract userId from PeerJS ID
+// Push peerId + refresh ttl (expiresAt = now + 5 min)
+  peerStore.set(userId, client.getId());
+  console.log(`📝 Stored peerId: ${client.getId()} for userId: ${userId}`);
+});
+
+
+
 
 schedule.scheduleJob('0 * * * *', removeExpiredMedia);  // Runs every hour
 
@@ -97,7 +145,9 @@ mongoose.connect('mongodb+srv://isenappnorway:S3WlOS8nf8EwWMmN@cluster0.gwb9wev.
   maxPoolSize: 10,           // Set max pool size for better connection handling (updated option for poolSize)
   retryWrites: true          // Enable retrying writes
 })
-.then(() => console.log("Database connected successfully..."))
+.then(async () => {
+  console.log("Database connected successfully...");
+})
 .catch((err) => console.log("Could not connect to database...", err));
 
 
@@ -141,6 +191,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 app.use('/public/images/avatars', express.static(path.join(__dirname, 'public/images/avatars')));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/upload_chat', express.static(path.join(__dirname, 'public/upload_chat')));
 
 
 
@@ -161,35 +212,104 @@ function listRoutes(app) {
 listRoutes(app);
 app.use(invalidTokenError);
 app.use(notFoundError);
+const { connectedUsers, socketUserMap } = require('./app/utils/socketManager');
 
-io.sockets.on('connection', (socket) => {
-  console.log('connection');
-  const userId = socket.handshake.query.userId; // Adjust based on your implementation
+app.set('connectedUsers', connectedUsers);
 
-  // Set user as online when they connect
-  User.findById(userId).then(user => {
-      if (user) {
-          user.setOnline();
-      }
+io.sockets.on('connection', async (socket) => {
+  console.log('⚡ New WebSocket connection:', socket.id);
+  
+  // ✅ Immediately get userId from the JWT middleware (already injected earlier)
+  const userId = socket.userId;
+  console.log(`✅ User ${userId} connected with socket ID ${socket.id}`);
+
+  // Store the connection in memory
+  if (!connectedUsers[userId]) {
+    connectedUsers[userId] = new Set();
+  }
+  connectedUsers[userId].add(socket.id);
+  socketUserMap[socket.id] = userId;
+
+  // Update DB to mark user online
+  try {
+    await User.findByIdAndUpdate(userId, { 
+      online: true, 
+      lastSeen: new Date() 
+    });
+    io.emit('user-status-changed', { userId, online: true });
+  } catch (err) {
+    console.error('Error updating online status:', err);
+  }
+
+  // 📡 Presence tracking after PeerJS.init()
+  socket.on('online', async ({ userId: u, peerId }) => {
+    if (!u || !peerId) return;
+    if (!connectedUsers[u]) {
+      connectedUsers[u] = new Set();
+    }
+    connectedUsers[u].add(socket.id);
+    socketUserMap[socket.id] = u;
+
+    await peerStore.set(u, peerId);
+    io.to(socket.id).emit('online-confirmed', { peerId });
+
+    console.log(`✅ Presence updated for ${u}, peerId: ${peerId}`);
   });
 
-  socket.on('disconnect', async () => {
-    try {
-        const user = await User.findById(userId);
-        if (user) {
-            user.setOffline();
-            user.lastSeen = new Date();
-            await user.save();
-        }
-    } catch (err) {
-        console.error('Error setting user offline:', err);
+  // 📢 Debug all events
+  socket.onAny((event, ...args) => {
+    console.log(`📢 WebSocket Event Received: ${event}`, args);
+  });
+
+  // Heartbeat mechanism
+  let isAlive = true;
+  const heartbeatInterval = setInterval(() => {
+    if (!isAlive) {
+      console.log(`💔 No heartbeat from ${socket.id}, terminating`);
+      socket.disconnect(true);
+      return;
     }
+    isAlive = false;
+    socket.emit('ping');
+  }, 30000); // every 30 seconds
+
+  socket.on('pong', () => {
+    isAlive = true;
+  });
+
+  // 🔌 Disconnect handler
+  socket.on('disconnect', async () => {
+    clearInterval(heartbeatInterval);
+
+    console.log(`❌ Disconnected: User ${userId}, Socket ID: ${socket.id}`);
+
+    if (connectedUsers[userId]) {
+      connectedUsers[userId].delete(socket.id);
+      if (connectedUsers[userId].size === 0) {
+        delete connectedUsers[userId];
+        try {
+          await User.findByIdAndUpdate(userId, { 
+            online: false, 
+            lastSeen: new Date() 
+          });
+          console.log(`💤 User ${userId} marked as offline.`);
+          io.emit('user-status-changed', { userId, online: false });
+        } catch (err) {
+          console.error('❌ Error during user disconnect cleanup:', err);
+        }
+      }
+    }
+
+    delete socketUserMap[socket.id];
+  });
+
+  // 🔗 Attach chat & video handlers
+  require('./app/sockets/chat')(io, socket, connectedUsers);
+  require('./app/sockets/video')(io, socket, connectedUsers);
 });
 
 
-  require('./app/sockets/chat')(io, socket);
-  require('./app/sockets/video')(io, socket);
-});
+
 
 // Serve the Cordova application for the browser platform
 app.use(express.static(path.join(__dirname, 'platforms/browser/www')));

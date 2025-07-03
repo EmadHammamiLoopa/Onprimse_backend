@@ -69,6 +69,11 @@ exports.signup = async (req, res) => {
 
         // Save the user
         await user.save();
+        const peerId = `${user._id}-${Math.random().toString(36).substring(2, 7)}`;
+await peerStore.set(user._id.toString(), peerId);
+console.log(`✅ Peer ID generated and stored on signup: ${peerId}`);
+
+
         return Response.sendResponse(res, user);
 
     } catch (err) {
@@ -153,6 +158,14 @@ exports.signin = async (req, res) => {
             console.log(`User ${user.email} was disabled, re-enabling...`);
             user.enabled = true; // Re-enable the user automatically
             await user.save();    // Save the updated user status
+            const existingPeer = await peerStore.get(user._id.toString());
+
+            if (!existingPeer) {
+            const peerId = `${user._id}-${Math.random().toString(36).substring(2, 6)}`;
+            await peerStore.set(user._id.toString(), peerId);
+            console.log(`🆕 Peer ID set on login: ${peerId}`);
+            }
+
         }
 
         // Authenticate the user by comparing the passwords

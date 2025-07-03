@@ -5,6 +5,7 @@ exports.userById = async (req, res, next, id) => {
     try {
         console.log(`userByIduserByIduserByIduserById`); // Log the incoming user ID
         console.log(`Looking for user with ID: ${id}`); // Log the incoming user ID
+        console.log('🟡 connectedUsers map at userById:', require('../utils/socketManager').connectedUsers);
 
         // Fetch user by ID
         const user = await User.findById(id);

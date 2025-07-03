@@ -5,6 +5,7 @@ const { userSubscribed } = require('../middlewares/subscription');
 const Message = require('../models/Message');
 const User = require('../models/User');
 const Response = require('./Response');
+const helpers = require('../helpers');          // path to helpers/index.js
 
 exports.indexMessages = async (req, res) => {
     console.log("hereeeeeeeeeeeeeeeeeeeee");
@@ -35,6 +36,11 @@ exports.indexMessages = async (req, res) => {
         const allowToChat = req.user.friends.includes(req.auth._id) ||
             await Message.find({ from: userId, to: authUserId }).countDocuments() > 0;
 
+            messages.forEach((msg, i) => {
+              console.log(`📥 [${i}] Image path:`, msg.image?.path || null);
+            });
+
+            
         return Response.sendResponse(res, {
             messages,
             more: (count - (limit * (page + 1))) > 0,
@@ -46,90 +52,71 @@ exports.indexMessages = async (req, res) => {
     }
 };
 
-
 exports.getUsersMessages = async (req, res) => {
     const limit = 20;
-    const page = req.query.page ? +req.query.page : 0;
-
-    console.log('Fetching users messages with parameters:', {
-        limit,
-        page,
-        authUserId: req.authUser._id,
-    });
-
+    const page  = req.query.page ? +req.query.page : 0;
+  
+    console.log('Fetching users messages:', { limit, page, authUserId: req.authUser._id });
+  
+    /* ------------- Mongo filter ------------- */
     const filter = {
-        _id: {
-            $nin: req.authUser.blockedUsers,
-            $ne: req.authUser._id,
-        },
-        blockedUsers: {
-            $ne: req.authUser._id,
-        },
-        $or: [
-            { messagedUsers: req.authUser._id },
-            { friends: req.authUser._id },
-            { messages: { $ne: [] } }
-        ],
-        deletedAt: null
+      _id: { $nin: req.authUser.blockedUsers, $ne: req.authUser._id },
+      blockedUsers: { $ne: req.authUser._id },
+      $or: [
+        { messagedUsers: req.authUser._id },
+        { friends:       req.authUser._id },
+        { messages:      { $ne: [] } }
+      ],
+      deletedAt: null
     };
-
-    console.log('Filter:', JSON.stringify(filter, null, 2)); // Log the filter
-
+    console.log('Filter:', JSON.stringify(filter, null, 2));
+  
     try {
-        const users = await User.find(filter)
-            .populate({
-                path: 'messages',
-                match: {
-                    $or: [
-                        { to: req.authUser._id },
-                        { from: req.authUser._id },
-                    ],
-                },
-                options: {
-                    sort: { createdAt: -1 },
-                },
-            })
-            .select({
-                firstName: 1,
-                lastName: 1,
-                avatar: 1,
-                mainAvatar: 1,
-
-                messages: 1,
-                id: "$_id",
-                online: {
-                    $cond: [
-                        { $in: ["$_id", Object.keys(connectedUsers).map(id => new mongoose.Types.ObjectId(id))] },
-                        true,
-                        false,
-                    ],
-                },
-            })
-            .skip(limit * page)
-            .limit(limit);
-
-        console.log('Users found:', users.length); // Log the number of users found
-        users.forEach(user => {
-            console.log('User:', user._id, 'Messages:', user.messages); // Log user details
-        });
-
-        if (!users || users.length === 0) {
-            return Response.sendError(res, 400, 'No users found');
-        }
-
-        const count = await User.countDocuments(filter);
-
-        const usersWithStatus = setOnlineUsers(users);
-        return Response.sendResponse(res, {
-            users: usersWithStatus,
-            more: count - limit * (page + 1) > 0,
-        });
+      /* ------------- Fetch candidate users (no online calc yet) ------------- */
+      const users = await User.find(filter)
+        .select({ firstName:1, lastName:1, avatar:1, mainAvatar:1, messages:1 })
+        .skip(limit * page)
+        .limit(limit);
+  
+      console.log('Users found:', users.length);
+  
+      /* ------------- Pull full convo for each user ------------- */
+      const usersWithMessages = await Promise.all(
+        users.map(async (user) => {
+          const messages = await Message.find({
+            $or: [
+              { from: user._id,        to: req.authUser._id },
+              { from: req.authUser._id, to: user._id        }
+            ]
+          }).sort({ createdAt: -1 });
+  
+          return { ...user.toObject(), messages };
+        })
+      );
+  
+      if (usersWithMessages.length === 0) {
+        return Response.sendError(res, 400, 'No users found');
+      }
+  
+      /* ------------- Add online flag using live socket map ------------- */
+      const ioInstance = req.app.get('io');                   // may be undefined in tests
+      const liveMap = ioInstance
+        ? helpers.connectedUsersMap(ioInstance.sockets)
+        : {}; 
+      
+      const usersWithStatus = helpers.setOnlineUsers(usersWithMessages, liveMap);
+  
+      /* ------------- Pagination meta ------------- */
+      const total = await User.countDocuments(filter);
+      const more  = total - limit * (page + 1) > 0;
+  
+      return Response.sendResponse(res, { users: usersWithStatus, more });
     } catch (err) {
-        console.error('Error fetching users messages:', err); // Log the error
-        return Response.sendError(res, 500, 'Internal server error');
+      console.error('Error fetching users messages:', err);
+      return Response.sendError(res, 500, 'Internal server error');
     }
-};
-
+  };
+  
 
 
 exports.deleteMessage = async (req, res) => {

@@ -21,7 +21,6 @@ const userSchema = new mongoose.Schema({
         type: String,
         enum: ['male', 'female', 'other']
     },
-    online: { type: Boolean, default: false }, // Track online status
     lastSeen: { type: Date }, // Optional: Track when the user was last online
     is2FAEnabled: {
         type: Boolean,
@@ -75,7 +74,9 @@ const userSchema = new mongoose.Schema({
     visitProfile: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
     googleId: { type: String, unique: true, sparse: true }
-}, { timestamps: true });
+}, { timestamps: true,     toJSON: { virtuals: true }, 
+toObject: { virtuals: true } 
+});
 
 // Virtual for full name
 userSchema.virtual('fullName').get(function() {
@@ -130,18 +131,27 @@ userSchema.methods.isOldPasswordFormat = function() {
 
 
 
-// Set user online
-userSchema.methods.setOnline = function() {
-    this.online = true;
-    return this.save();
-};
+userSchema.virtual('lastSeenText').get(function () {
+    const { connectedUsers } = require('../utils/socketManager');
 
-// Set user offline
-userSchema.methods.setOffline = function() {
-    this.online = false;
-    this.lastSeen = new Date();
-    return this.save();
-};
+    // If user is online, return "Online now"
+    if (connectedUsers[this._id.toString()]) {
+        return 'Online now';
+    }
+
+    // If no lastSeen, return "Never seen"
+    if (!this.lastSeen) return 'Never seen';
+
+    const diffMs = new Date() - this.lastSeen;
+    const diffMinutes = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMinutes < 1) return 'Just now';
+    if (diffMinutes < 60) return `${diffMinutes} minute(s) ago`;
+    if (diffHours < 24) return `${diffHours} hour(s) ago`;
+    return `${diffDays} day(s) ago`;
+});
 
 // Get default avatar based on gender
 userSchema.methods.getDefaultAvatar = function() {
@@ -185,6 +195,7 @@ userSchema.methods.publicInfo = function(isLoggedInUser = false) {
         randomVisible: this.randomVisible,
         ageVisible: this.ageVisible,
         loggedIn: this.loggedIn,
+        online: this.online,
         visitProfile: this.visitProfile,
         profileCreated: this.profileCreated,
         enabled: this.enabled,
@@ -198,7 +209,8 @@ userSchema.methods.publicInfo = function(isLoggedInUser = false) {
         followedChannels: this.followedChannels,
         messagedUsers: this.messagedUsers,
         lastSeen: this.lastSeen,
-        // Only include birthDate if ageVisible is true or the user is the one logged in
+        lastSeenText: this.lastSeenText,
+       // Only include birthDate if ageVisible is true or the user is the one logged in
         birthDate: this.ageVisible || isLoggedInUser ? this.birthDate : null
     };
 };

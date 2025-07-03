@@ -1,153 +1,155 @@
-const Response = require("./controllers/Response");
-const Report = require("./models/Report");
-const request = require('request');
+/*********************************************************************
+ * helpers/index.js  – single source of truth for “generic” helpers
+ *********************************************************************/
 
-exports.manAvatarPath = '/avatars/male.webp'
-exports.womenAvatarPath = '/avatars/female.webdp'
-exports.ERROR_CODES = {
-    SUBSCRIPTION_ERROR: 1001
+const Response = require('./controllers/Response');
+const Report   = require('./models/Report');
+const pushSvc  = require('.././app/utils/pushService');          // ← your OneSignal / FCM wrapper
+const socketManager = require('.././app/utils/socketManager');
+
+/*────────────────────────── CONSTANTS ──────────────────────────*/
+const manAvatarPath   = '/avatars/male.webp';
+const womenAvatarPath = '/avatars/female.webp';
+const ERROR_CODES     = { SUBSCRIPTION_ERROR: 1001 };
+
+/*───────────────────── Socket‑IO bootstrap & helpers ───────────*/
+
+/** Wake the callee: emit on socket if online, else push */
+function notifyPeerNeeded(calleeId) {
+  if (!io) return console.warn('notifyPeerNeeded called before helpers.init(io)');
+  if (io.sockets?.adapter?.rooms?.has(calleeId)) {
+    io.to(calleeId).emit('incoming-call');
+  } else {
+    pushSvc.sendPush(calleeId, { title: 'Incoming call', body: 'Tap to answer' });
+  }
 }
 
-exports.connectedUsers = {}
-
-exports.connectedUsers = (sockets) => {
-    const connectedUsers = {}
-    sockets.sockets.forEach((socket, key) => {
-        connectedUsers[socket.username] = key
-    })
-    return connectedUsers
+/** Build <userId → socketId> map from live Socket.IO server */
+function connectedUsersMap() {
+  return socketManager.connectedUsers;
 }
 
-exports.userSocketId = (sockets, user_id) => {
-    let socket_id = null
-    sockets.sockets.forEach((socket, key) => {
-        if(socket.username == user_id){
-            socket_id = key
-            return
-        }
-    })
-    return socket_id
+function userSocketIds(userId) {
+  return socketManager.connectedUsers[userId] ? Array.from(socketManager.connectedUsers[userId]) : [];
 }
 
-exports.isUserConnected = (sockets, user_id) => {
-    let res = false
-    sockets.sockets.forEach((socket, key) => {
-        if(socket.username == user_id){
-            res = true
-            return
-        }
-    })
-    return res
+function isUserConnected(userId) {
+  return !!socketManager.connectedUsers[userId];
 }
 
-exports.setOnlineUsers = (users) => {
-    users.forEach(usr => {
-        if(this.connectedUsers[usr._id]) usr.online = true
-        else usr.online = false
-    })
-    return users
+function setOnlineUsers(users) {
+  users.forEach(u => {
+    u.online = !!socketManager.connectedUsers[u._id?.toString()];
+  });
+  return users;
 }
 
-exports.extractDashParams = (req, searchFields) => {
-    const page = req.query.page ? +req.query.page : 1;
-    const limit = req.query.limit ? +req.query.limit : 10;  // Default limit to 10 if not provided
-    const sortBy = req.query.sortBy ? req.query.sortBy : '_id';
-    const sortDir = req.query.sortDir ? +req.query.sortDir : 1;
-    const searchQuery = req.query.searchQuery ? req.query.searchQuery.trim() : "";
-    
-    const sort = {};
-    sort[sortBy] = sortDir;
+  
 
-    // Build the search filter only if the searchQuery is present
-    let searchFilter = [];
-    if (searchQuery) {
-        searchFields.forEach(field => {
-            // Apply $regex only to string fields
-            if (field === 'text' || field === 'description' || field === 'title') {
-                let obj = {};
-                obj[field] = { $regex: searchQuery, $options: 'i' };  // Apply case-insensitive search for string fields
-                searchFilter.push(obj);
-            } else {
-                // For non-string fields, perform a direct match
-                let obj = {};
-                obj[field] = searchQuery;
-                searchFilter.push(obj);
-            }
-        });
-    }
+/*──────────────────── Misc dashboard / admin helpers ───────────*/
+function extractDashParams(req, searchFields) {
+  const page        = req.query.page     ? +req.query.page     : 1;
+  const limit       = req.query.limit    ? +req.query.limit    : 10;
+  const sortBy      = req.query.sortBy   || '_id';
+  const sortDir     = req.query.sortDir  ? +req.query.sortDir  : 1;
+  const searchQuery = req.query.searchQuery ? req.query.searchQuery.trim() : '';
 
-    const filter = searchFilter.length > 0 ? { $or: searchFilter } : {};  // Add filter only if search fields are populated
+  const sort = { [sortBy]: sortDir };
 
-    return {
-        filter,
-        sort,
-        skip: limit * (page - 1),
-        limit
-    };
+  // build $or search filter
+  const or = [];
+  if (searchQuery) {
+    searchFields.forEach(field => {
+      const obj = {};
+      obj[field] =
+        ['text','description','title'].includes(field)
+          ? { $regex: searchQuery, $options: 'i' }
+          : searchQuery;
+      or.push(obj);
+    });
+  }
+
+  return {
+    filter : or.length ? { $or: or } : {},
+    sort,
+    skip   : limit * (page - 1),
+    limit
+  };
+}
+
+async function report(req, res, entityName, entityId) {
+  try {
+    const doc = await new Report({
+      entity      : entityId,
+      entityModel : entityName.charAt(0).toUpperCase() + entityName.slice(1),
+      user        : req.auth._id,
+      message     : req.body.message,
+      reportType  : req.body.reportType
+    }).save();
+    return doc;
+  } catch (err) {
+    console.error('Error saving report:', err);
+    return Response.sendError(res, 400, 'Failed to save report');
+  }
+}
+
+const adminCheck = (req) =>
+  req.auth.role === 'ADMIN' || req.auth.role === 'SUPER ADMIN';
+
+/*────────────────────── Push / OneSignal helper ───────────────*/
+async function sendNotification(userIds, message, senderName, fromUserId) {
+  let recipientIds = Array.isArray(userIds) ? userIds : [userIds];
+  recipientIds = recipientIds
+    .filter(id => id && typeof id === 'string' && id.trim())
+    .map(id => id.trim());
+
+  if (recipientIds.length === 0) {
+    return console.error('❌ No valid user IDs for notification.');
+  }
+
+  const chatId = [fromUserId, recipientIds[0]].sort().join('-');
+
+  const payload = {
+    app_id  : '3b993591-823b-4f45-94b0-c2d0f7d0f6d8',
+    headings: { en: String(senderName) || 'New Message' },
+    contents: { en: String(message)    || 'You have a new message' },
+    include_external_user_ids: recipientIds,
+    data    : { type: 'message', link: `/messages/chat/${chatId}` }
+  };
+
+  try {
+    const res = await fetch('https://onesignal.com/api/v1/notifications', {
+      method : 'POST',
+      headers: {
+        'Content-Type' : 'application/json',
+        'Authorization': 'Basic os_v2_app_homtlemchnhulffqylippuhw3auw4vp7fmtu4xfrujbvrgzb536ngtne6z7hsyjy6r7yjvqpvx26bmpi42pvgguhvzdycwvca6ik3bi'
+      },
+      body: JSON.stringify(payload)
+    });
+    console.log('✅ Notification response:', await res.json());
+  } catch (err) {
+    console.error('❌ Error sending notification:', err);
+  }
+}
+
+/*──────────────────────── Module exports ───────────────────────*/
+module.exports = {
+  /* constants */
+  manAvatarPath,
+  womenAvatarPath,
+  ERROR_CODES,
+
+  /* Socket bootstrap + helpers */
+  notifyPeerNeeded,
+  connectedUsersMap,
+  isUserConnected,
+  setOnlineUsers,
+
+  /* misc utilities */
+  extractDashParams,
+  report,
+  adminCheck,
+
+  /* push */
+  sendNotification
 };
-
-
-
-exports.report = async (req, res, entityName, entityId) => {
-    try {
-        const report = new Report({
-            entity: entityId,
-            entityModel: entityName.charAt(0).toUpperCase() + entityName.slice(1),  // Ensure correct capitalization
-            user: req.auth._id,
-            message: req.body.message,
-            reportType: req.body.reportType // Ensure reportType is provided
-        });
-
-        await report.save();
-        return report; // Return the saved report instead of using a callback
-    } catch (error) {
-        console.log('Error saving report:', error);
-        return Response.sendError(res, 400, 'Failed to save report');
-    }
-};
-
- 
-
-
-
-exports.adminCheck = (req) => {
-    return req.auth.role == 'ADMIN' || req.auth.role == 'SUPER ADMIN'
-}
-
-// ['Subscribed Users'],
-
-exports.sendNotification = (title, message, data, segments = [], player_ids = [], voip = false) => {
-    console.log('send notification ')
-    console.log(player_ids)
-    
-    let body = {
-        app_id: process.env.ONE_SIGNAL_APP_ID,
-        headings: title,
-        contents: message,
-        included_segments: segments,
-        include_external_user_ids: player_ids,
-        data
-    }
-
-    console.log("--------------------------------------")
-    console.log('send notification')
-    console.log(body)
-
-    request(
-        {
-            method:'POST',
-            uri:'https://onesignal.com/api/v1/notifications',
-            headers: {
-                "authorization": "Basic "+ process.env.ONE_SIGNAL_REST_KEY,
-                "content-type": "application/json"
-            },
-            json: true,
-            body
-        },
-        (error, response, body) => {
-            console.log(error)
-            console.log(response)
-            console.log(body)
-        }
-    );
-}

@@ -375,6 +375,26 @@ exports.updateUserDash = async (req, res) => {
 };
 
 
+exports.uploadChatMedia = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'No file uploaded' });
+        }
+
+        // File uploaded successfully
+        const chatFileUrl = `${req.protocol}://${req.get('host')}${req.savedChatPath}`;
+
+        return res.status(200).json({
+            success: true,
+            message: 'File uploaded successfully',
+            fileUrl: chatFileUrl
+        });
+    } catch (err) {
+        console.error('Error uploading chat media:', err);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
 exports.showUserDash = async (req, res) => {
     try {
         // Using async/await for the query
@@ -734,13 +754,13 @@ exports.getUsers = async (req, res) => {
 
             // Return response with users
             console.log("Final response:", { users: setOnlineUsers(allUsers), more: hasMoreUsers(allUsers, limit, page), isGlobalSearch });
-            return Response.sendResponse(res, { users: setOnlineUsers(allUsers), more: hasMoreUsers(allUsers, limit, page) });
+            return Response.sendResponse(res, { users: setOnlineUsers(allUsers), more: hasMoreUsers(allUsers, limit, page),isGlobalSearch  });
 
         } else {
             // Handle random user fetching logic for non-'near' type
             let randomUsers = await findRandomUsers(req, filter, limit);
             console.log("Final response:", { users: setOnlineUsers(randomUsers), more: hasMoreUsers(randomUsers, limit, page), isGlobalSearch });
-            return Response.sendResponse(res, { users: setOnlineUsers(randomUsers), more: hasMoreUsers(randomUsers, limit, page) });
+            return Response.sendResponse(res, { users: setOnlineUsers(randomUsers), more: hasMoreUsers(randomUsers, limit, page),isGlobalSearch });
         }
 
     } catch (err) {
@@ -885,6 +905,7 @@ function getUserSelectFields(req) {
         randomVisible: 1,
         ageVisible: 1,
         loggedIn: 1,
+        online: 1,
         visitProfile: 1,
         salt: 1,
         hashed_password: 1,
@@ -912,6 +933,20 @@ const isFriend = (authUser, user) => {
     };
 };
 
+function formatLastSeen(lastSeenDate) {
+    const now = new Date();
+    const lastSeen = new Date(lastSeenDate);
+    const diffMs = now - lastSeen;
+    const diffMinutes = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMinutes < 1) return 'just now';
+    if (diffMinutes < 60) return `${diffMinutes} minute(s) ago`;
+    if (diffHours < 24) return `${diffHours} hour(s) ago`;
+    return `${diffDays} day(s) ago`;
+}
+
 exports.getUserProfile = async (req, res) => {
     console.log(`Fetching user profile for ID: ${req.params.userId}`);
 
@@ -921,8 +956,8 @@ exports.getUserProfile = async (req, res) => {
 
         console.log(`Authenticated user ID: ${authUserId}`);
 
-        // Find the user by ID and populate the subscription details
-        const user = await User.findOne({ _id: userId })
+        // Find the user by ID and populate subscription details
+        const userDoc = await User.findOne({ _id: userId })
             .select({
                 firstName: 1,
                 lastName: 1,
@@ -937,6 +972,7 @@ exports.getUserProfile = async (req, res) => {
                 interests: 1,
                 education: 1,
                 school: 1,
+                loggedIn: 1,
                 enabled: 1,
                 is2FAEnabled: 1,
                 twoFAToken: 1,
@@ -950,41 +986,49 @@ exports.getUserProfile = async (req, res) => {
                 messagedUsers: 1,
                 randomVisible: 1,
                 ageVisible: 1,
-                loggedIn: 1,
                 visitProfile: 1,
                 lastSeen: 1,
                 aboutMe: 1,
-                subscription: 1, // Include subscription field
+                subscription: 1,
                 createdAt: 1,
                 updatedAt: 1
             })
             .populate({
                 path: 'subscription._id',
                 model: 'Subscription',
-                select: 'dayPrice weekPrice monthPrice yearPrice currency offers', // Only include necessary fields
+                select: 'dayPrice weekPrice monthPrice yearPrice currency offers',
             });
 
-        if (!user) return res.status(400).send('Failed to fetch user profile');
-        if (user.deletedAt) return res.status(204).send();
+        if (!userDoc) return res.status(400).send('Failed to fetch user profile');
+        if (userDoc.deletedAt) return res.status(204).send();
 
-        // Set default avatar based on gender if no avatar is set
+        // Convert to plain object to include virtual fields (like online, lastSeenText)
+        const user = userDoc.toObject();
+
+        // Set default avatar if needed
         if (!user.mainAvatar) {
-            user.mainAvatar = user.getDefaultAvatar(); // Set default avatar based on gender
+            user.mainAvatar = userDoc.getDefaultAvatar();
         }
 
-        const relationshipStatus = isFriend(req.auth, user);
-        console.log('Relationship status:', relationshipStatus);
+        const relationshipStatus = isFriend(req.auth, userDoc); // still pass Mongoose doc to isFriend()
 
+        const { connectedUsers } = require('../utils/socketManager');
+        const userSockets = connectedUsers[user._id.toString()];
+        const isOnline = (userSockets && userSockets.size && userSockets.size > 0) ? true : false;
+        
         const response = {
-            ...user._doc, // Include user data
+            ...user,
             subscription: user.subscription?._id ? {
-                ...user.subscription._id._doc, // Unwrap the subscription object fields
+                ...user.subscription._id,
                 expireDate: user.subscription.expireDate
-            } : null, // Handle case when user doesn't have a subscription
+            } : null,
             ...relationshipStatus,
-            loggedIn: req.auth && req.auth._id.toString() === user._id.toString(), // Ensure loggedIn is set correctly
-            online: user.loggedIn // Set the user's online status
+            loggedIn: user.loggedIn,  // from DB
+            online: isOnline,         // real-time
+            lastSeenText: isOnline ? 'Online now' : formatLastSeen(user.lastSeen)
         };
+        
+        
 
         console.log('Sending user profile:', response);
 
@@ -994,6 +1038,8 @@ exports.getUserProfile = async (req, res) => {
         return res.status(500).send('Server error');
     }
 };
+
+
 
 
 

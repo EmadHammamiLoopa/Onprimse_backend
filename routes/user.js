@@ -12,6 +12,8 @@ const Product = require("../app/models//Product");
 const Job = require("../app/models//Job");
 const Service = require("../app/models//Service");
 const Subscription = require('../app/models/Subscription'); // Adjust the path to your Subscription model
+const peerStore = require('.././app/utils/peerStorage');
+const { notifyPeerNeeded } = require('../app/helpers');   // <-- import once
 
 const {
     allUsers,
@@ -41,6 +43,7 @@ const {
     updateAgeVisibility,
     profileVisited,
     updateMainAvatar,
+    uploadChatMedia,
     removeAvatar
 } = require('../app/controllers/UserController');
 const { requireSignin, isAuth, withAuthUser, isAdmin, isSuperAdmin } = require('../app/middlewares/auth');
@@ -49,8 +52,9 @@ const { userById, isNotBlocked } = require('../app/middlewares/user');
 const { userUpdateValidator, updateEmailValidator, updatePasswordValidator, userStoreValidator, userDashUpdateValidator } = require('../app/middlewares/validators/userValidator');
 const router = express.Router();
 const multer = require('multer');
+const Peer = require('../app/models/Peer');   // ← add this
+const { upload, chatUpload } = require('../middlewares/upload');
 
-const upload = require('../middlewares/upload'); // Adjust the path if necessary
 
 // Register routes
 router.put('/randomVisibility', [requireSignin], updateRandomVisibility);
@@ -61,6 +65,123 @@ router.post('/profile-visited', [requireSignin, withAuthUser], profileVisited);
 
 router.get('/all', [requireSignin, isAdmin], allUsers);
 router.post('/', [form, requireSignin, isSuperAdmin, userStoreValidator], storeUser);
+
+// Add PeerJS routes
+
+/**
+ * ✅ Store Peer ID when a user connects
+ */router.post('/:userId/peer', async (req, res) => {
+  const { userId } = req.params;
+  const { peerId }  = req.body;
+
+  if (!peerId) {
+    return res.status(400).json({ success:false, message:'peerId is required' });
+  }
+
+  try {
+    await peerStore.set(userId, peerId);                // <-- upsert + ttl refresh
+    console.log(`✅  stored peerId for ${userId}: ${peerId}`);
+
+    return res.json({
+      success : true,
+      message : 'Peer ID stored',
+      userId,
+      peerId
+    });
+  } catch (err) {
+    console.error('❌  peerStore.set failed:', err);
+    return res.status(500).json({ success:false, message:'DB error', error:err.message });
+  }
+});
+
+
+/* ───────────────────────── GET   /:userId/peer ──────────────────────────
+ * The caller hits this to find out whether the callee is online.
+ *  – If a fresh record exists      → return {peerId, expires}
+ *  – If missing/expired            → nudge callee + return {peerId:null}
+ */
+router.get('/:userId/peer', async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const record = await peerStore.get(userId); // { peerId, lastUpdated } | null
+
+    if (!record) {
+      notifyPeerNeeded(userId); // wake the callee via socket or other means
+      return res.json({ success: true, peerId: null });
+    }
+
+    return res.json({
+      success: true,
+      peerId: record.peerId
+    });
+
+  } catch (err) {
+    next(err); // pass to global error handler
+  }
+});
+
+
+/**
+ * ✅ Delete Peer ID
+ */
+router.delete('/:userId/peer', async (req, res) => {
+    const userId = req.params.userId;
+
+    try {
+        const peer = await peerStore.get(userId);
+
+        if (!peer) {
+            return res.status(404).json({
+                success: false,
+                message: "Peer ID not found.",
+                userId
+            });
+        }
+
+        await peerStore.delete(userId);
+        console.log(`❌ Removed peerId for userId: ${userId}`);
+        return res.json({
+            success: true,
+            message: "Peer ID removed successfully.",
+            userId
+        });
+
+    } catch (err) {
+        console.error("❌ Error deleting peerId:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to delete peer ID.",
+            error: err.message
+        });
+    }
+});
+
+router.patch('/:userId/peer/heartbeat', async (req, res) => {
+  const { userId } = req.params;
+
+  try {
+    await Peer.updateOne(
+      { userId },
+      { $set: { lastUpdated: new Date() } }
+    );
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('❌ heartbeat error:', err);
+    return res.status(500).json({ success: false, message: 'DB error' });
+  }
+});
+
+router.post('/:userId/upload', [requireSignin, withAuthUser, chatUpload.single('upload')], (req, res, next) => {
+  console.log('✅ Reached /:userId/upload route');
+  console.log('Request params userId:', req.params.userId);
+  console.log('Authenticated user from middleware:', req.auth);
+  console.log('Uploaded file info:', req.file);
+  console.log('Saved Chat Path:', req.savedChatPath);
+
+  // You can keep your original controller logic here
+  uploadChatMedia(req, res, next);
+});
 
 router.get('/dash/:userId', [requireSignin, isAdmin], showUserDash);
 router.put('/dash/:userId', [form, requireSignin, isSuperAdmin, userDashUpdateValidator], updateUserDash);
