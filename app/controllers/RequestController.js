@@ -1,163 +1,223 @@
-const { request } = require("express");
 const mongoose = require("mongoose");
-const { sendNotification } = require("../helpers");
+const { sendNotification, emitNewFriendRequest, emitFriendRequestsUpdated } = require("../helpers");
 const Request = require("../models/Request");
 const User = require("../models/User");
 const Response = require("./Response");
 
+/**
+ * Create a friend request from req.auth._id → req.user._id (or body.to)
+ * Requires an auth middleware that sets req.auth and a resolver that sets req.user (target).
+ */
 exports.storeRequest = async (req, res) => {
   try {
-    console.log('store request');
-    const request = new Request({
-      from: req.auth._id,
-      to: req.user._id,
-    });
+    const fromId = String(req.auth?._id || "");
+    const toId   = String(req.user?._id || req.body?.to || "");
 
-    await request.save();
+    if (!fromId || !toId || !mongoose.Types.ObjectId.isValid(fromId) || !mongoose.Types.ObjectId.isValid(toId)) {
+      return Response.sendError(res, 400, "Invalid user id(s)");
+    }
+    if (fromId === toId) {
+      return Response.sendError(res, 400, "You cannot send a request to yourself");
+    }
 
-    await User.updateOne({ _id: request.to }, { $push: { requests: request._id } });
-    await User.updateOne({ _id: request.from }, { $push: { requests: request._id } });
+    // Make sure both users exist
+    const [fromUser, toUser] = await Promise.all([
+      User.findById(fromId).select("_id firstName lastName"),
+      User.findById(toId).select("_id firstName lastName"),
+    ]);
+    if (!fromUser || !toUser) {
+      return Response.sendError(res, 404, "User not found");
+    }
 
-    sendNotification(
-      { en: req.authUser.firstName + ' ' + req.authUser.lastName },
-      { en: 'sent you a friendship request' },
-      { type: 'request', link: '/tabs/friends/requests' },
-      [],
-      [req.user._id]
-    );
+    // Already friends?
+    const alreadyFriends = await User.exists({ _id: fromId, friends: new mongoose.Types.ObjectId(toId) });
+    if (alreadyFriends) {
+      return Response.sendError(res, 409, "You are already friends");
+    }
 
-    return Response.sendResponse(res, { request }, 'Friendship request sent');
+    // Existing pending request in either direction?
+    const existing = await Request.findOne({
+      accepted: false,
+      $or: [
+        { from: new mongoose.Types.ObjectId(fromId), to: new mongoose.Types.ObjectId(toId) },
+        { from: new mongoose.Types.ObjectId(toId),   to: new mongoose.Types.ObjectId(fromId) },
+      ],
+    }).select("_id");
+    if (existing) {
+      return Response.sendError(res, 409, "A pending request already exists");
+    }
+
+    // Create request
+    const doc = await new Request({
+      from: new mongoose.Types.ObjectId(fromId),
+      to  : new mongoose.Types.ObjectId(toId),
+      accepted: false,
+    }).save();
+
+    // Track on each user (optional; safe/no-dup)
+    await Promise.all([
+      User.updateOne({ _id: fromId }, { $addToSet: { requests: doc._id } }),
+      User.updateOne({ _id: toId   }, { $addToSet: { requests: doc._id } }),
+    ]);
+
+    // 🔔 Push + Socket events
+    const senderName = `${fromUser.firstName || ""} ${fromUser.lastName || ""}`.trim() || "Someone";
+    sendNotification([toId], "sent you a friendship request", senderName, fromId).catch(console.error);
+    emitNewFriendRequest(toId, fromId);
+
+    return Response.sendResponse(res, { request: doc }, "Friendship request sent");
   } catch (err) {
-    console.log(err);
-    return Response.sendError(res, 500, 'Failed to store request');
+    console.error("storeRequest error:", err);
+    return Response.sendError(res, 500, "Failed to store request");
   }
 };
 
-
+/**
+ * List incoming requests for the authenticated user
+ * GET /request?&page=0
+ */
 exports.requests = async (req, res) => {
   try {
-    const limit = 20;
-    const page = parseInt(req.query.page) || 0;
+    const authId = String(req.auth?._id || "");
+    if (!authId || !mongoose.Types.ObjectId.isValid(authId)) {
+      return Response.sendError(res, 400, "Invalid user id");
+    }
 
-    // Find requests with pagination and population
-    const requests = await Request.find({
-      to: new mongoose.Types.ObjectId(req.auth._id),
+    const limit = 20;
+    const page = Number.isFinite(+req.query.page) ? +req.query.page : 0;
+
+    const items = await Request.find({
+      to: new mongoose.Types.ObjectId(authId),
       accepted: false,
     })
-      .populate('from', {
-        firstName: 1,
-        lastName: 1,
-        avatar: 1,
+      .populate("from", {
+        firstName : 1,
+        lastName  : 1,
+        avatar    : 1,
         mainAvatar: 1,
-
-      }, 'User')
+      }, "User")
       .select({ from: 1, createdAt: 1 })
+      .sort({ createdAt: -1 })
       .skip(limit * page)
       .limit(limit);
 
-    return Response.sendResponse(res, requests);
+    return Response.sendResponse(res, items);
   } catch (err) {
-    console.error(`Error in requests: ${err.message}`, err);
-    return Response.sendError(res, 400, 'Failed to fetch requests.');
+    console.error("requests error:", err);
+    return Response.sendError(res, 400, "Failed to fetch requests.");
   }
 };
 
-
-
+/**
+ * Accept a pending request and make both users friends
+ * POST /request/:id/accept    (or :requestId/accept)
+ */
 exports.acceptRequest = async (req, res) => {
   try {
-    const { requestId } = req.params;
-    const request = await Request.findById(requestId);
-
-    if (!request) {
-      return Response.sendError(res, 400, 'Invalid request ID');
+    const id = req.params.requestId || req.params.id;
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return Response.sendError(res, 400, "Invalid request ID");
     }
 
-    const { from, to } = request;
-    const fromUser = await User.findById(from);
-    const toUser = await User.findById(to);
+    // Load request with from/to
+    const reqDoc = await Request.findById(id);
+    if (!reqDoc) return Response.sendError(res, 404, "Request not found");
 
-    if (!fromUser || !toUser) {
-      return Response.sendError(res, 400, 'User not found');
-    }
+    const fromId = String(reqDoc.from);
+    const toId   = String(reqDoc.to);
 
-    // Add each other to friends list
-    fromUser.friends.push(to);
-    toUser.friends.push(from);
+    // Add each other to friends (idempotent)
+    await Promise.all([
+      User.updateOne({ _id: fromId }, { $addToSet: { friends: new mongoose.Types.ObjectId(toId) } }),
+      User.updateOne({ _id: toId   }, { $addToSet: { friends: new mongoose.Types.ObjectId(fromId) } }),
+    ]);
 
-    // Save changes
-    await fromUser.save();
-    await toUser.save();
+    // Remove request + clean from users
+    await Promise.all([
+      Request.deleteOne({ _id: id }),
+      User.updateOne({ _id: fromId }, { $pull: { requests: new mongoose.Types.ObjectId(id) } }),
+      User.updateOne({ _id: toId   }, { $pull: { requests: new mongoose.Types.ObjectId(id) } }),
+    ]);
 
-    // Remove the request after acceptance
-    await Request.findByIdAndDelete(requestId);
+    // Notify sender that it was accepted
+    const authUser = await User.findById(req.auth._id).select("firstName lastName");
+    const acceptorName = `${authUser?.firstName || ""} ${authUser?.lastName || ""}`.trim() || "Someone";
+    sendNotification([fromId], "accepted your friendship request", acceptorName, String(req.auth._id)).catch(console.error);
 
-    sendNotification(
-      { en: `${req.authUser.firstName} ${req.authUser.lastName}` },
-      { en: 'accepted your friendship request' },
-      { type: 'request', link: '/tabs/friends/list' },
-      [],
-      [from]
-    );
+    // 🔁 Ask both sides to refresh counters precisely
+    emitFriendRequestsUpdated(fromId, toId);
 
-    return Response.sendResponse(res, true, 'Friendship request accepted');
+    return Response.sendResponse(res, true, "Friendship request accepted");
   } catch (err) {
-    console.log(err);
-    return Response.sendError(res, 500, 'Server error');
+    console.error("acceptRequest error:", err);
+    return Response.sendError(res, 500, "Server error");
   }
 };
 
-  
+/**
+ * Reject a request (remove it; does not add friendship)
+ * POST /request/:id/reject
+ */
 exports.rejectRequest = async (req, res) => {
-  const { id } = req.params;
   try {
-    const request = await Request.findById(id);
-    if (!request) return Response.sendError(res, 400, 'Invalid request ID');
-
-    await request.remove();
-    await User.updateOne({ _id: req.auth._id }, { $pull: { requests: request._id } });
-
-    return Response.sendResponse(res, true, 'Request rejected');
-  } catch (err) {
-    console.log(err);
-    return Response.sendError(res, 500, 'Server error');
-  }
-};
-
-
-exports.cancelRequest = async (req, res) => {
-  console.log('req.params:', req.params);  // Log the entire params object
-
-  const { requestId } = req.params;  // Extract requestId, not id
-  console.log('requestId:', requestId);
-
-  // Validate if the request ID is a valid MongoDB ObjectId
-  if (!mongoose.Types.ObjectId.isValid(requestId)) {
-    return Response.sendError(res, 400, 'Invalid request ID format');
-  }
-
-  try {
-    // Log the ID to ensure it's being passed correctly
-    console.log('Cancel request ID:', requestId);
-
-    // Check if the request exists in the database
-    const request = await Request.findById(requestId);
-    if (!request) {
-      return Response.sendError(res, 400, 'Request not found');
+    const id = req.params.requestId || req.params.id;
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return Response.sendError(res, 400, "Invalid request ID");
     }
 
-    const toUser = request.to;
-    
-    // Remove the request and update both users
-    await request.deleteOne();  // Use deleteOne instead of remove
-    await User.updateOne({ _id: toUser }, { $pull: { requests: request._id } });
-    await User.updateOne({ _id: req.auth._id }, { $pull: { requests: request._id } });
+    const reqDoc = await Request.findById(id);
+    if (!reqDoc) return Response.sendError(res, 404, "Request not found");
 
-    return Response.sendResponse(res, true, 'Request canceled successfully');
+    const fromId = String(reqDoc.from);
+    const toId   = String(reqDoc.to);
+
+    await Promise.all([
+      Request.deleteOne({ _id: id }),
+      User.updateOne({ _id: fromId }, { $pull: { requests: new mongoose.Types.ObjectId(id) } }),
+      User.updateOne({ _id: toId   }, { $pull: { requests: new mongoose.Types.ObjectId(id) } }),
+    ]);
+
+    // 🔁 precise recount for both users
+    emitFriendRequestsUpdated(fromId, toId);
+
+    return Response.sendResponse(res, true, "Request rejected");
   } catch (err) {
-    // Log the error for further investigation
-    console.error('Error in cancelRequest:', err);
-    return Response.sendError(res, 500, 'Server error while canceling the request');
+    console.error("rejectRequest error:", err);
+    return Response.sendError(res, 500, "Server error");
   }
 };
 
+/**
+ * Cancel a request (by the sender) – equivalent to deleting the pending request
+ * POST /request/:id/cancel     (or :requestId/cancel)
+ */
+exports.cancelRequest = async (req, res) => {
+  try {
+    const id = req.params.requestId || req.params.id;
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return Response.sendError(res, 400, "Invalid request ID format");
+    }
+
+    const reqDoc = await Request.findById(id);
+    if (!reqDoc) {
+      return Response.sendError(res, 404, "Request not found");
+    }
+
+    const fromId = String(reqDoc.from);
+    const toId   = String(reqDoc.to);
+
+    await Promise.all([
+      Request.deleteOne({ _id: id }),
+      User.updateOne({ _id: fromId }, { $pull: { requests: new mongoose.Types.ObjectId(id) } }),
+      User.updateOne({ _id: toId   }, { $pull: { requests: new mongoose.Types.ObjectId(id) } }),
+    ]);
+
+    // 🔁 precise recount for both users
+    emitFriendRequestsUpdated(fromId, toId);
+
+    return Response.sendResponse(res, true, "Request canceled successfully");
+  } catch (err) {
+    console.error("cancelRequest error:", err);
+    return Response.sendError(res, 500, "Server error while canceling the request");
+  }
+};

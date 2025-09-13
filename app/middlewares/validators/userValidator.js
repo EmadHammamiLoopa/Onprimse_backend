@@ -56,7 +56,7 @@ exports.userUpdateValidator = (req, res, next) => {
     if (req.body.firstName) fieldsToValidate.firstName = 'alpha|max:40|min:2';
     if (req.body.lastName) fieldsToValidate.lastName = 'alpha|max:40|min:2';
     if (req.body.email) fieldsToValidate.email = 'email|max:150|min:5';
-    if (req.body.gender) fieldsToValidate.gender = 'in:male,female';
+    if (req.body.gender) fieldsToValidate.gender = 'in:male,female,other';
     if (req.body.phone) fieldsToValidate.phone = 'regex:\\+?[0-9]+|min:4';
     if (req.body.country) fieldsToValidate.country = 'alpha|max:30|min:3';
     if (req.body.birthdate) fieldsToValidate.birthdate = 'date';

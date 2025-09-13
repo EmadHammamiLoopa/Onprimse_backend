@@ -1,7 +1,7 @@
 const User = require("../models/User")
 const Response = require("./Response")
 const jwt = require('jsonwebtoken')
-const { manAvatarPath, womenAvatarPath } = require("../helpers")
+const { manAvatarPath, womenAvatarPath, othersAvatarPath } = require("../helpers")
 const Channel = require("../models/Channel")
 const Subscription = require("../models/Subscription")
 const { reduceRight } = require("lodash")
@@ -46,42 +46,68 @@ const autoFollowStaticChannels = async (authUser) => {
 
 exports.signup = async (req, res) => {
     try {
-        const user = new User(req.body);
-        user.enabled = true;
-        // Check if the email already exists
-        const existingUser = await User.findOne({ email: user.email });
-        if (existingUser) return Response.sendError(res, 400, 'Email already exists');
-
-        // Set the avatar based on gender
-        if (user.gender === 'male') user.avatar.path = manAvatarPath;
-        else user.avatar.path = womenAvatarPath;
-        user.avatar.type = "png";
-        user.followedChannels = [];
-
-        // Auto-follow static channels
-        await autoFollowStaticChannels(user);
-
-        // Add local channels
-        await addLocalChannels(user);
-
-        // Add a free subscription
-        await addFreeSubscription(user);
-
-        // Save the user
-        await user.save();
-        const peerId = `${user._id}-${Math.random().toString(36).substring(2, 7)}`;
-await peerStore.set(user._id.toString(), peerId);
-console.log(`✅ Peer ID generated and stored on signup: ${peerId}`);
-
-
-        return Response.sendResponse(res, user);
-
+      // --- normalize payload ---
+      const body = { ...req.body };
+  
+      // email -> lowercase
+      if (typeof body.email === 'string') body.email = body.email.trim().toLowerCase();
+  
+      // interests -> always array (unlimited)
+      if (typeof body.interests === 'string') {
+        body.interests = body.interests.split(',').map(s => s.trim()).filter(Boolean);
+      } else if (Array.isArray(body.interests)) {
+        body.interests = body.interests.map(s => String(s).trim()).filter(Boolean);
+      } else {
+        body.interests = [];
+      }
+  
+      // unique email check BEFORE constructing user
+      const existingUser = await User.findOne({ email: body.email });
+      if (existingUser) return Response.sendError(res, 400, 'Email already exists');
+  
+      // construct user
+      const user = new User(body);
+      user.enabled = true;
+      user.followedChannels = user.followedChannels || [];
+  
+      // --- avatar: schema is [String], pick a path and set mainAvatar + array ---
+      let avatarPath;
+      if (user.gender === 'male') {
+        avatarPath = manAvatarPath;
+      } else if (user.gender === 'other') {
+        avatarPath = othersAvatarPath;
+      } else {
+        avatarPath = womenAvatarPath;
+      }
+      user.mainAvatar = avatarPath;
+      if (!Array.isArray(user.avatar) || user.avatar.length === 0) {
+        user.avatar = [avatarPath];
+      }
+  
+      // side-effects
+      await autoFollowStaticChannels(user);
+      await addLocalChannels(user);
+      await addFreeSubscription(user);
+  
+      // save user
+      await user.save();
+  
+      // peer id should not fail signup
+      try {
+        const peerId = `${user._id}-${Math.random().toString(36).slice(2, 7)}`;
+        await peerStore.set(user._id.toString(), peerId);
+        console.log(`✅ Peer ID generated and stored on signup: ${peerId}`);
+      } catch (e) {
+        console.warn('Peer store set failed:', e);
+      }
+  
+      return Response.sendResponse(res, user.publicInfo(true));
     } catch (err) {
-        console.error('Signup error:', err);
-        return Response.sendError(res, 400, 'Failed to sign up user');
+      console.error('Signup error:', err);
+      return Response.sendError(res, 400, err.message || 'Failed to sign up user');
     }
-};
-
+  };
+  
 addFreeSubscription = async(user) => {
     //assign one month subscription free
     const subscription = await Subscription.findOne({})

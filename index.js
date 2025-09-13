@@ -69,15 +69,19 @@ const removeExpiredMedia = async () => {
 
 
 const http = require('http').Server(app);
-const io = require('socket.io')(http, {
-  cors: {
-    origin: ["http://localhost:4200", "http://localhost:4202"], 
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], //  ← add PATCH
-    allowedHeaders: ['Content-Type', 'Authorization'],
 
-    credentials: true
-  }
+const io = require('socket.io')(http, {
+  path: '/socket.io',                   // ✅ be explicit
+  cors: {
+    origin: (origin, cb) => cb(null, true), // ✅ allow all (dev)
+
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  },
 });
+
+helpers.initSocket(io);
 
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token;

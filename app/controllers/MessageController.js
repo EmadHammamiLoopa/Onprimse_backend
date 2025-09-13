@@ -26,15 +26,17 @@ exports.indexMessages = async (req, res) => {
 
     try {
         const messages = await Message.find(filter)
-            .sort({ createdAt: 1 })
+            .sort({ createdAt: -1 })
             .skip(limit * page)
             .limit(limit);
 
         console.log('Messages found:', messages); // Log the messages
 
         const count = await Message.countDocuments(filter);
-        const allowToChat = req.user.friends.includes(req.auth._id) ||
-            await Message.find({ from: userId, to: authUserId }).countDocuments() > 0;
+        const allowToChat =
+        req.authUser?.friends?.map(id => id.toString()).includes(userId.toString()) ||
+        (await Message.countDocuments({ from: userId, to: authUserId })) > 0;
+    
 
             messages.forEach((msg, i) => {
               console.log(`📥 [${i}] Image path:`, msg.image?.path || null);
