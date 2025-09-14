@@ -20,6 +20,7 @@ const upload = multer().array('avatar', 10); // Adjust the field name and limit 
 const defaultMaleAvatarUrl = '/public/images/avatars/male.webp';
 const defaultFemaleAvatarUrl = '/public/images/avatars/female.webp';
 const defaultOtherAvatarUrl = '/public/images/avatars/other.webp';
+const { isUserOnline } = require("../utils/socketManager");
 
 
 
@@ -588,45 +589,39 @@ exports.storeAvatar = async (avatar, user) => {
 
 exports.updateMainAvatar = async (req, res) => {
     try {
-        const userId = req.params.userId; // Get userId from URL parameter
-        const { avatarUrl } = req.body; // Get avatarUrl from request body
-
-        console.log('Received request to update main avatar with userId:', userId, 'and avatarUrl:', avatarUrl);
-
-        if (!userId || !avatarUrl) {
-            console.log('Missing userId or avatarUrl.');
-            return Response.sendError(res, 400, 'Missing userId or avatarUrl.');
-        }
-
-        const user = await User.findById(userId);
-        if (!user) return res.status(404).send('User not found');
-
-        // Convert the absolute URL to a relative path for comparison
-        const relativeAvatarUrl = avatarUrl.replace(`${req.protocol}://${req.get('host')}`, '');
-
-        // Ensure the avatarUrl exists in the user's avatar array
-        if (!user.avatar.includes(relativeAvatarUrl)) {
-            console.log('Avatar URL not found in user avatars:', relativeAvatarUrl);
-            return res.status(400).send('Avatar URL not found in user avatars.');
-        }
-
-        // Update the mainAvatar
-        user.mainAvatar = relativeAvatarUrl;
-
-        await user.save();
-
-        console.log('Main avatar updated successfully for userId:', userId);
-
-        return res.status(200).send({
-            message: 'Main avatar updated successfully',
-            user: user.publicInfo()
-        });
+      const userId = req.params.userId;
+      const { avatarUrl } = req.body;
+  
+      if (!userId || !avatarUrl) {
+        return Response.sendError(res, 400, 'Missing userId or avatarUrl.');
+      }
+  
+      const user = await User.findById(userId)
+        .populate('subscription._id', 'dayPrice weekPrice monthPrice yearPrice currency offers');
+  
+      if (!user) return res.status(404).send('User not found');
+  
+      // Convert absolute to relative
+      const relativeAvatarUrl = avatarUrl.replace(`${req.protocol}://${req.get('host')}`, '');
+  
+      if (!user.avatar.includes(relativeAvatarUrl)) {
+        return res.status(400).send('Avatar URL not found in user avatars.');
+      }
+  
+      // ✅ Update and persist
+      user.mainAvatar = relativeAvatarUrl;
+      await user.save();
+  
+      return res.status(200).send({
+        message: 'Main avatar updated successfully',
+        user: user.publicInfo()
+      });
     } catch (err) {
-        console.error('Error updating main avatar:', err);
-        return res.status(500).send('Server error');
+      console.error('Error updating main avatar:', err);
+      return res.status(500).send('Server error');
     }
-};
-
+  };
+  
   
 
   
@@ -843,19 +838,36 @@ async function findUsersGlobally(req, filter, skip, limit) {
 
 // Helper function to find random users
 async function findRandomUsers(req, filter, limit) {
-    filter['randomVisible'] = true;
-    const count = await User.find(filter).countDocuments();
-    const skip = count > 5 ? Math.floor(Math.random() * (count - 5)) : 0;
-    console.log("Filter being used for random search:", filter);
-    return await User.find(filter)
-        .populate('requests', '', 'Request', getRequestPopulationQuery(req))
-        .select(getUserSelectFields(req))
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .exec();
-}
+  filter['randomVisible'] = true;
 
+  const authId = new mongoose.Types.ObjectId(req.auth._id.toString());
+  filter['_id'] = { $ne: authId };
+  filter['blockedUsers'] = { $nin: [authId] };
+  filter['friends'] = { $nin: [authId] };
+
+  console.log("🔎 Base filter (no online yet):", filter);
+
+  // Fetch candidates without online condition
+  const candidates = await User.find(filter)
+    .populate('requests', '', 'Request', getRequestPopulationQuery(req))
+    .select(getUserSelectFields(req))
+    .sort({ createdAt: -1 })
+    .lean();
+
+  console.log(`👥 Candidates before online filter: ${candidates.length}`);
+
+  // Apply online filter in Node.js
+  const onlineUsers = candidates.filter(u => isUserOnline(u._id.toString()));
+
+  console.log(`✅ Online candidates after filter: ${onlineUsers.length}`);
+
+  // Random slice
+  const count = onlineUsers.length;
+  const skip = count > limit ? Math.floor(Math.random() * (count - limit)) : 0;
+  const users = onlineUsers.slice(skip, skip + limit);
+
+  return users;
+}
 // Helper function to determine if more users exist for pagination
 function hasMoreUsers(users, limit, page) {
     return (users.length - (limit * (page + 1))) > 0;
@@ -949,96 +961,111 @@ function formatLastSeen(lastSeenDate) {
 
 exports.getUserProfile = async (req, res) => {
     console.log(`Fetching user profile for ID: ${req.params.userId}`);
-
+  
     try {
-        const userId = req.params.userId;
-        const authUserId = req.auth._id;
-
-        console.log(`Authenticated user ID: ${authUserId}`);
-
-        // Find the user by ID and populate subscription details
-        const userDoc = await User.findOne({ _id: userId })
-            .select({
-                firstName: 1,
-                lastName: 1,
-                email: 1,
-                country: 1,
-                city: 1,
-                gender: 1,
-                avatar: 1,
-                mainAvatar: 1,
-                birthDate: 1,
-                profession: 1,
-                interests: 1,
-                education: 1,
-                school: 1,
-                loggedIn: 1,
-                enabled: 1,
-                is2FAEnabled: 1,
-                twoFAToken: 1,
-                role: 1,
-                banned: 1,
-                followers: 1,
-                following: 1,
-                friends: 1,
-                blockedUsers: 1,
-                followedChannels: 1,
-                messagedUsers: 1,
-                randomVisible: 1,
-                ageVisible: 1,
-                visitProfile: 1,
-                lastSeen: 1,
-                aboutMe: 1,
-                subscription: 1,
-                createdAt: 1,
-                updatedAt: 1
-            })
-            .populate({
-                path: 'subscription._id',
-                model: 'Subscription',
-                select: 'dayPrice weekPrice monthPrice yearPrice currency offers',
-            });
-
-        if (!userDoc) return res.status(400).send('Failed to fetch user profile');
-        if (userDoc.deletedAt) return res.status(204).send();
-
-        // Convert to plain object to include virtual fields (like online, lastSeenText)
-        const user = userDoc.toObject();
-
-        // Set default avatar if needed
-        if (!user.mainAvatar) {
-            user.mainAvatar = userDoc.getDefaultAvatar();
-        }
-
-        const relationshipStatus = isFriend(req.auth, userDoc); // still pass Mongoose doc to isFriend()
-
-        const { connectedUsers } = require('../utils/socketManager');
-        const userSockets = connectedUsers[user._id.toString()];
-        const isOnline = (userSockets && userSockets.size && userSockets.size > 0) ? true : false;
-        
-        const response = {
-            ...user,
-            subscription: user.subscription?._id ? {
-                ...user.subscription._id,
-                expireDate: user.subscription.expireDate
-            } : null,
-            ...relationshipStatus,
-            loggedIn: user.loggedIn,  // from DB
-            online: isOnline,         // real-time
-            lastSeenText: isOnline ? 'Online now' : formatLastSeen(user.lastSeen)
-        };
-        
-        
-
-        console.log('Sending user profile:', response);
-
-        return res.status(200).send({ data: response });
+      const userId = req.params.userId;
+      const authUserId = req.auth._id.toString();
+  
+      console.log(`Authenticated user ID: ${authUserId}`);
+  
+      // Find the user by ID and populate subscription details
+      const userDoc = await User.findOne({ _id: userId })
+        .select({
+          firstName: 1,
+          lastName: 1,
+          email: 1,
+          country: 1,
+          city: 1,
+          gender: 1,
+          avatar: 1,
+          mainAvatar: 1,
+          birthDate: 1,
+          profession: 1,
+          interests: 1,
+          education: 1,
+          school: 1,
+          loggedIn: 1,
+          enabled: 1,
+          is2FAEnabled: 1,
+          twoFAToken: 1,
+          role: 1,
+          banned: 1,
+          followers: 1,
+          following: 1,
+          friends: 1,
+          blockedUsers: 1,
+          followedChannels: 1,
+          messagedUsers: 1,
+          randomVisible: 1,
+          ageVisible: 1,
+          visitProfile: 1,
+          lastSeen: 1,
+          aboutMe: 1,
+          subscription: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          deletedAt: 1
+        })
+        .populate({
+          path: "subscription._id",
+          model: "Subscription",
+          select: "dayPrice weekPrice monthPrice yearPrice currency offers",
+        });
+  
+      if (!userDoc) {
+        return res.status(404).send("User not found");
+      }
+      if (userDoc.deletedAt) {
+        return res.status(204).send();
+      }
+  
+      // 🚫 Defensive: if backend tries to return self when requesting another profile
+      if (userDoc._id.toString() === authUserId && userId !== authUserId) {
+        return res.status(404).send("User not found");
+      }
+  
+      // Convert to plain object
+      const user = userDoc.toObject();
+  
+      // Default avatar if missing
+      if (!user.mainAvatar && typeof userDoc.getDefaultAvatar === "function") {
+        user.mainAvatar = userDoc.getDefaultAvatar();
+      }
+  
+      // Relationship status
+      const relationshipStatus = isFriend(req.auth, userDoc);
+  
+      // Real-time online status
+      const response = {
+        ...user,
+        subscription: user.subscription?._id
+          ? {
+              ...user.subscription._id,
+              expireDate: user.subscription.expireDate,
+            }
+          : null,
+        ...relationshipStatus,
+        loggedIn: user.loggedIn,
+        online: user.online,            // use virtual
+        lastSeenText: user.lastSeenText // use virtual
+      };
+      
+  
+      console.log("Sending user profile:", {
+        _id: response._id,
+        isLoggedInUser: response.isLoggedInUser,
+        isFriend: response.isFriend,
+        online: response.online,
+        lastSeenText: response.lastSeenText,
+      });
+  
+      return res.status(200).send({ data: response });
     } catch (err) {
-        console.error('Error fetching user profile:', err);
-        return res.status(500).send('Server error');
+      console.error("Error fetching user profile:", err);
+      return res.status(500).send("Server error");
     }
-};
-
+  };
+  
 
 
 

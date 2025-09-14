@@ -130,29 +130,6 @@ userSchema.methods.isOldPasswordFormat = function() {
 };
 
 
-
-userSchema.virtual('lastSeenText').get(function () {
-    const { connectedUsers } = require('../utils/socketManager');
-
-    // If user is online, return "Online now"
-    if (connectedUsers[this._id.toString()]) {
-        return 'Online now';
-    }
-
-    // If no lastSeen, return "Never seen"
-    if (!this.lastSeen) return 'Never seen';
-
-    const diffMs = new Date() - this.lastSeen;
-    const diffMinutes = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMinutes / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffMinutes < 1) return 'Just now';
-    if (diffMinutes < 60) return `${diffMinutes} minute(s) ago`;
-    if (diffHours < 24) return `${diffHours} hour(s) ago`;
-    return `${diffDays} day(s) ago`;
-});
-
 // Get default avatar based on gender
 userSchema.methods.getDefaultAvatar = function() {
     switch (this.gender.toLowerCase()) {
@@ -237,6 +214,28 @@ userSchema.methods.addFollower = function(followerId) {
         this.followers.push(followerId);
     }
 };
+
+
+userSchema.virtual('online').get(function () {
+    const { isUserOnline } = require('../utils/socketManager');
+    return isUserOnline(this._id.toString());
+  });
+  
+  userSchema.virtual('lastSeenText').get(function () {
+    const { isUserOnline } = require('../utils/socketManager');
+    if (isUserOnline(this._id.toString())) return 'Online now';
+    if (!this.lastSeen) return 'Never seen';
+  
+    const diffMs = Date.now() - this.lastSeen.getTime();
+    const diffMinutes = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+  
+    if (diffMinutes < 1) return 'Just now';
+    if (diffMinutes < 60) return `${diffMinutes} minute(s) ago`;
+    if (diffHours < 24) return `${diffHours} hour(s) ago`;
+    return `${diffDays} day(s) ago`;
+  });
 
 // Remove follower
 userSchema.methods.removeFollower = function(followerId) {

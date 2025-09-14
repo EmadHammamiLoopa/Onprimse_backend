@@ -55,70 +55,80 @@ exports.indexMessages = async (req, res) => {
 };
 
 exports.getUsersMessages = async (req, res) => {
+  try {
     const limit = 20;
     const page  = req.query.page ? +req.query.page : 0;
-  
-    console.log('Fetching users messages:', { limit, page, authUserId: req.authUser._id });
-  
-    /* ------------- Mongo filter ------------- */
-    const filter = {
-      _id: { $nin: req.authUser.blockedUsers, $ne: req.authUser._id },
-      blockedUsers: { $ne: req.authUser._id },
-      $or: [
-        { messagedUsers: req.authUser._id },
-        { friends:       req.authUser._id },
-        { messages:      { $ne: [] } }
-      ],
-      deletedAt: null
-    };
-    console.log('Filter:', JSON.stringify(filter, null, 2));
-  
-    try {
-      /* ------------- Fetch candidate users (no online calc yet) ------------- */
-      const users = await User.find(filter)
-        .select({ firstName:1, lastName:1, avatar:1, mainAvatar:1, messages:1 })
-        .skip(limit * page)
-        .limit(limit);
-  
-      console.log('Users found:', users.length);
-  
-      /* ------------- Pull full convo for each user ------------- */
-      const usersWithMessages = await Promise.all(
-        users.map(async (user) => {
-          const messages = await Message.find({
-            $or: [
-              { from: user._id,        to: req.authUser._id },
-              { from: req.authUser._id, to: user._id        }
-            ]
-          }).sort({ createdAt: -1 });
-  
-          return { ...user.toObject(), messages };
-        })
-      );
-  
-      if (usersWithMessages.length === 0) {
-        return Response.sendError(res, 400, 'No users found');
-      }
-  
-      /* ------------- Add online flag using live socket map ------------- */
-      const ioInstance = req.app.get('io');                   // may be undefined in tests
-      const liveMap = ioInstance
-        ? helpers.connectedUsersMap(ioInstance.sockets)
-        : {}; 
-      
-      const usersWithStatus = helpers.setOnlineUsers(usersWithMessages, liveMap);
-  
-      /* ------------- Pagination meta ------------- */
-      const total = await User.countDocuments(filter);
-      const more  = total - limit * (page + 1) > 0;
-  
-      return Response.sendResponse(res, { users: usersWithStatus, more });
-    } catch (err) {
-      console.error('Error fetching users messages:', err);
-      return Response.sendError(res, 500, 'Internal server error');
-    }
-  };
-  
+
+    const authId   = new mongoose.Types.ObjectId(req.authUser._id);
+    const blocked  = req.authUser.blockedUsers || [];
+
+    // 1) Get distinct peers you've exchanged messages with, newest first
+    const peersPage = await Message.aggregate([
+      { $match: { $or: [ { from: authId }, { to: authId } ] } },
+      { $project: {
+          createdAt: 1,
+          peerId: { $cond: [ { $eq: ['$from', authId] }, '$to', '$from' ] }
+        }
+      },
+      { $sort: { createdAt: -1 } },
+      { $group: {
+          _id: '$peerId',
+          lastMessageAt: { $first: '$createdAt' }
+        }
+      },
+      // filter out blocked/soft-deleted here with a $lookup to users
+      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+      { $unwind: '$user' },
+      { $match: {
+          'user.deletedAt': null,
+          '_id': { $nin: blocked },
+          'user.blockedUsers': { $ne: authId }
+        }
+      },
+      { $sort: { lastMessageAt: -1 } },
+      { $skip: limit * page },
+      { $limit: limit }
+    ]);
+
+    // 2) Fetch messages for each peer (newest first) and shape the response
+    const usersWithMessages = await Promise.all(
+      peersPage.map(async ({ _id: peerId, user }) => {
+        const messages = await Message.find({
+          $or: [
+            { from: peerId, to: authId },
+            { from: authId, to: peerId }
+          ]
+        }).sort({ createdAt: -1 });
+
+        return {
+          _id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          avatar: user.avatar,
+          mainAvatar: user.mainAvatar,
+          messages
+        };
+      })
+    );
+
+    // 3) Compute total number of distinct peers for pagination
+    const totalPeersAgg = await Message.aggregate([
+      { $match: { $or: [ { from: authId }, { to: authId } ] } },
+      { $project: { peerId: { $cond: [ { $eq: ['$from', authId] }, '$to', '$from' ] } } },
+      { $group: { _id: '$peerId' } },
+      { $count: 'count' }
+    ]);
+    const total = totalPeersAgg?.[0]?.count || 0;
+
+    const more = total - limit * (page + 1) > 0;
+
+    return Response.sendResponse(res, { users: usersWithMessages, more });
+  } catch (err) {
+    console.error('Error fetching users messages:', err);
+    return Response.sendError(res, 500, 'Internal server error');
+  }
+};
+
 
 
 exports.deleteMessage = async (req, res) => {

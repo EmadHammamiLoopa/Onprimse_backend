@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const express = require('express');
 const mongoose = require('mongoose');
 const helmet = require('helmet');
@@ -38,6 +40,7 @@ const Channel = require('./app/models/Channel');
 const Service = require('./app/models/Service');
 const Job = require('./app/models/Job');
 // Bootstrap helpers with a live Socket.IO reference
+const { userConnected, userDisconnected } = require('./app/utils/socketManager');
 
 
 
@@ -220,43 +223,26 @@ const { connectedUsers, socketUserMap } = require('./app/utils/socketManager');
 
 app.set('connectedUsers', connectedUsers);
 
-io.sockets.on('connection', async (socket) => {
+io.on('connection', async (socket) => {
   console.log('⚡ New WebSocket connection:', socket.id);
-  
-  // ✅ Immediately get userId from the JWT middleware (already injected earlier)
+
   const userId = socket.userId;
   console.log(`✅ User ${userId} connected with socket ID ${socket.id}`);
 
-  // Store the connection in memory
-  if (!connectedUsers[userId]) {
-    connectedUsers[userId] = new Set();
-  }
-  connectedUsers[userId].add(socket.id);
-  socketUserMap[socket.id] = userId;
+  // Register this connection
+  userConnected(userId, socket.id);
 
-  // Update DB to mark user online
-  try {
-    await User.findByIdAndUpdate(userId, { 
-      online: true, 
-      lastSeen: new Date() 
-    });
-    io.emit('user-status-changed', { userId, online: true });
-  } catch (err) {
-    console.error('Error updating online status:', err);
-  }
+  // Broadcast presence
+  io.emit('user-status-changed', { userId, online: true });
 
   // 📡 Presence tracking after PeerJS.init()
   socket.on('online', async ({ userId: u, peerId }) => {
     if (!u || !peerId) return;
-    if (!connectedUsers[u]) {
-      connectedUsers[u] = new Set();
-    }
-    connectedUsers[u].add(socket.id);
-    socketUserMap[socket.id] = u;
 
+    userConnected(u, socket.id);
     await peerStore.set(u, peerId);
-    io.to(socket.id).emit('online-confirmed', { peerId });
 
+    io.to(socket.id).emit('online-confirmed', { peerId });
     console.log(`✅ Presence updated for ${u}, peerId: ${peerId}`);
   });
 
@@ -275,7 +261,7 @@ io.sockets.on('connection', async (socket) => {
     }
     isAlive = false;
     socket.emit('ping');
-  }, 30000); // every 30 seconds
+  }, 30000);
 
   socket.on('pong', () => {
     isAlive = true;
@@ -287,31 +273,23 @@ io.sockets.on('connection', async (socket) => {
 
     console.log(`❌ Disconnected: User ${userId}, Socket ID: ${socket.id}`);
 
-    if (connectedUsers[userId]) {
-      connectedUsers[userId].delete(socket.id);
-      if (connectedUsers[userId].size === 0) {
-        delete connectedUsers[userId];
-        try {
-          await User.findByIdAndUpdate(userId, { 
-            online: false, 
-            lastSeen: new Date() 
-          });
-          console.log(`💤 User ${userId} marked as offline.`);
-          io.emit('user-status-changed', { userId, online: false });
-        } catch (err) {
-          console.error('❌ Error during user disconnect cleanup:', err);
-        }
+    const wentOffline = userDisconnected(socket.id);
+
+    if (wentOffline) {
+      try {
+        await User.findByIdAndUpdate(userId, { lastSeen: new Date() });
+        console.log(`💤 User ${userId} marked as offline.`);
+        io.emit('user-status-changed', { userId, online: false });
+      } catch (err) {
+        console.error('❌ Error during user disconnect cleanup:', err);
       }
     }
-
-    delete socketUserMap[socket.id];
   });
 
   // 🔗 Attach chat & video handlers
-  require('./app/sockets/chat')(io, socket, connectedUsers);
-  require('./app/sockets/video')(io, socket, connectedUsers);
+  require('./app/sockets/chat')(io, socket);
+  require('./app/sockets/video')(io, socket);
 });
-
 
 
 

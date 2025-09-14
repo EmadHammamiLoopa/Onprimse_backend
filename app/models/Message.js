@@ -47,7 +47,9 @@ const messageSchema = new mongoose.Schema({
   productId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Product', // Reference to the Product if the message is about a product
-  }
+  },
+    status: { type: String, enum: ['pending', 'accepted', 'cancelled'], default: null },
+
 }, { timestamps: true }); // Automatically adds createdAt and updatedAt fields
 
 module.exports = mongoose.model('Message', messageSchema);

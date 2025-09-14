@@ -1,23 +1,17 @@
-// app/sockets/video.js
 const User = require("../models/User");
 const Message = require("../models/Message");
+const { connectedUsers, isUserOnline } = require("../utils/socketManager"); // ✅ import only
 
-// Track ongoing 1:1 calls: activeVideoCalls[userId] = otherUserId
+// Track ongoing 1:1 calls
 const activeVideoCalls = Object.create(null);
+const ringTimers = new Map();
+const RING_TIMEOUT_MS = 30_000;
 
-// Track ring timers so we can cancel on accept/decline/etc.
-const ringTimers = new Map(); // key: `${from}:${to}` -> timeoutId
-
-const RING_TIMEOUT_MS = 30_000; // 30s ring window
-
-module.exports = (io, socket, connectedUsers) => {
-  // ───────────────────────────────── helpers ─────────────────────────────────
+module.exports = (io, socket) => {   // ✅ no extra param
+  // ─────────────────────────────── helpers ───────────────────────────────
   function getUserSockets(userId) {
-    const bucket = connectedUsers[userId];
-    if (!bucket) return [];
-    if (bucket instanceof Set) return Array.from(bucket);
-    if (Array.isArray(bucket)) return bucket;
-    return [];
+    const bucket = connectedUsers.get(userId); // ✅ Map access
+    return bucket ? Array.from(bucket) : [];
   }
 
   function emitToUser(userId, event, payload) {
